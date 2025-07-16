@@ -1,6 +1,6 @@
 # Implementation Plan
 
-- [-] 1. Deploy existing EMR Spark RAPIDS infrastructure
+- [ ] 1. Deploy existing EMR Spark RAPIDS infrastructure
   - Use existing emr-spark-rapids Terraform configuration as foundation
   - Deploy EKS cluster with g5.2xlarge GPU nodes and m5.xlarge CPU nodes
   - Configure Karpenter with existing spark-gpu-karpenter and spark-driver-cpu-karpenter node pools
