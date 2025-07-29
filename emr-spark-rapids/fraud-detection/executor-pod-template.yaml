@@ -1,0 +1,83 @@
+# Executor pod template for fraud detection feature engineering
+# Optimized for GPU-accelerated RAPIDS processing with high memory allocation
+apiVersion: v1
+kind: Pod
+metadata:
+  name: fraud-detection-executor
+  namespace: emr-ml-team-a
+  labels:
+    app: fraud-detection
+    component: executor
+    workload-type: feature-engineering
+spec:
+  nodeSelector:
+    NodeGroupType: "spark-executor-gpu-karpenter"  # Use Karpenter for GPU auto-scaling
+  
+  containers:
+  - name: spark-kubernetes-executor  # Required name for EMR on EKS
+    resources:
+      requests:
+        cpu: "5"
+        memory: "26Gi"
+        nvidia.com/gpu: "1"
+      limits:
+        cpu: "5"
+        memory: "28Gi"
+        nvidia.com/gpu: "1"
+    env:
+    - name: SPARK_EXECUTOR_MEMORY
+      value: "26g"
+    - name: SPARK_EXECUTOR_CORES
+      value: "5"
+    - name: RAPIDS_NO_INITIALIZE
+      value: "1"
+    - name: CUDF_SPILL
+      value: "1"
+    - name: CUDF_SPILL_DEVICE_LIMIT
+      value: "0.8"
+    - name: CUML_CACHE_DIRECTORY
+      value: "/tmp/cuml_cache"
+    - name: CUDA_VISIBLE_DEVICES
+      value: "0"
+    
+    # Volume mounts for local storage and caching
+    volumeMounts:
+    - name: local-ssd
+      mountPath: /tmp
+    - name: cuml-cache
+      mountPath: /tmp/cuml_cache
+  
+  volumes:
+  - name: local-ssd
+    hostPath:
+      path: /local1
+      type: DirectoryOrCreate
+  - name: cuml-cache
+    emptyDir:
+      sizeLimit: 4Gi
+  
+  restartPolicy: Never
+  
+  # GPU tolerations
+  tolerations:
+  - key: "nvidia.com/gpu"
+    operator: "Equal"
+    value: "present"
+    effect: "NoSchedule"
+  - key: "spark-executor"
+    operator: "Equal"
+    value: "true"
+    effect: "NoSchedule"
+  
+  # Affinity to ensure GPU nodes
+  affinity:
+    nodeAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        nodeSelectorTerms:
+        - matchExpressions:
+          - key: "node.kubernetes.io/instance-type"
+            operator: In
+            values: ["g5.xlarge", "g5.2xlarge", "g5.4xlarge", "g5.8xlarge"]
+          - key: "nvidia.com/gpu.present"
+            operator: In
+            values: ["true"]

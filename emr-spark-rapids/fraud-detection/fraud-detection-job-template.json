@@ -1,0 +1,106 @@
+{
+  "name": "fraud-detection-feature-engineering",
+  "virtualClusterId": "${EMR_VIRTUAL_CLUSTER_ID}",
+  "executionRoleArn": "${EMR_EXECUTION_ROLE_ARN}",
+  "releaseLabel": "emr-7.0.0-spark-rapids-latest",
+  "jobDriver": {
+    "sparkSubmitJobDriver": {
+      "entryPoint": "${SCRIPTS_S3_PATH}/fraud_detection_feature_engineering.py",
+      "entryPointArguments": [
+        "${CUSTOMERS_S3_PATH}",
+        "${TERMINALS_S3_PATH}",
+        "${TRANSACTIONS_S3_PATH}",
+        "${OUTPUT_S3_PATH}"
+      ],
+      "sparkSubmitParameters": "--conf spark.kubernetes.container.image=${FRAUD_DETECTION_IMAGE} --conf spark.kubernetes.driver.podTemplateFile=${SCRIPTS_S3_PATH}/driver-pod-template.yaml --conf spark.kubernetes.executor.podTemplateFile=${SCRIPTS_S3_PATH}/executor-pod-template.yaml"
+    }
+  },
+  "configurationOverrides": {
+    "applicationConfiguration": [
+      {
+        "classification": "spark-defaults",
+        "properties": {
+          "spark.kubernetes.file.upload.path": "${SCRIPTS_S3_PATH}/uploads/",
+          
+          "spark.plugins": "com.nvidia.spark.SQLPlugin",
+          "spark.shuffle.manager": "com.nvidia.spark.rapids.spark350.RapidsShuffleManager",
+          "spark.kubernetes.executor.podNamePrefix": "fraud-detection",
+          
+          "spark.driver.cores": "2",
+          "spark.driver.memory": "8G",
+          "spark.driver.maxResultSize": "4G",
+          
+          "spark.executor.instances": "${NUM_EXECUTORS:-12}",
+          "spark.executor.cores": "5",
+          "spark.executor.memory": "26G",
+          "spark.executor.memoryOverhead": "2G",
+          "spark.executor.extraLibraryPath": "/usr/local/cuda/lib:/usr/local/cuda/lib64:/usr/local/cuda/extras/CUPTI/lib64:/usr/local/cuda/targets/x86_64-linux/lib:/usr/lib/hadoop/lib/native:/usr/lib/hadooplzo/lib/native:/docker/usr/lib/hadoop/lib/native:/docker/usr/lib/hadoop-lzo/lib/native",
+          "spark.executor.resource.gpu.vendor": "nvidia.com",
+          "spark.executor.resource.gpu.amount": "1",
+          
+          "spark.task.cpus": "1",
+          "spark.task.resource.gpu.amount": "1",
+          
+          "spark.rapids.sql.enabled": "true",
+          "spark.rapids.sql.concurrentGpuTasks": "2",
+          "spark.rapids.sql.explain": "ALL",
+          "spark.rapids.sql.incompatibleOps.enabled": "true",
+          "spark.rapids.sql.castStringToFloat.enabled": "true",
+          "spark.rapids.sql.hasNans": "false",
+          
+          "spark.rapids.memory.pinnedPool.size": "2G",
+          "spark.rapids.memory.gpu.pool": "ASYNC",
+          "spark.rapids.memory.gpu.allocFraction": "0.6",
+          "spark.rapids.memory.gpu.maxAllocFraction": "0.8",
+          "spark.rapids.shuffle.mode": "MULTITHREADED",
+          
+          "spark.sql.sources.useV1SourceList": "parquet",
+          "spark.sql.files.maxPartitionBytes": "512MB",
+          "spark.sql.adaptive.enabled": "true",
+          "spark.sql.adaptive.coalescePartitions.enabled": "true",
+          "spark.sql.adaptive.coalescePartitions.minPartitionNum": "1",
+          "spark.sql.adaptive.coalescePartitions.initialPartitionNum": "200",
+          "spark.sql.adaptive.advisoryPartitionSizeInBytes": "256MB",
+          "spark.sql.execution.arrow.maxRecordsPerBatch": "200000",
+          "spark.locality.wait": "0s",
+          "spark.sql.shuffle.partitions": "200",
+          "spark.dynamicAllocation.enabled": "false",
+          
+          "spark.serializer": "org.apache.spark.serializer.KryoSerializer",
+          "spark.kryoserializer.buffer.max": "2047m",
+          "spark.network.timeout": "1600s",
+          "spark.executor.heartbeatInterval": "60s",
+          
+          "spark.sql.parquet.compression.codec": "snappy",
+          "spark.sql.parquet.filterPushdown": "true",
+          "spark.sql.parquet.mergeSchema": "false",
+          
+          "spark.hadoop.fs.s3a.impl": "org.apache.hadoop.fs.s3a.S3AFileSystem",
+          "spark.hadoop.fs.s3a.aws.credentials.provider": "com.amazonaws.auth.DefaultAWSCredentialsProviderChain",
+          "spark.hadoop.fs.s3a.block.size": "134217728",
+          "spark.hadoop.fs.s3a.buffer.dir": "/tmp",
+          "spark.hadoop.fs.s3a.committer.name": "magic",
+          "spark.hadoop.fs.s3a.committer.magic.enabled": "true",
+          "spark.hadoop.mapreduce.outputcommitter.factory.scheme.s3a": "org.apache.hadoop.fs.s3a.commit.S3ACommitterFactory"
+        }
+      }
+    ],
+    "monitoringConfiguration": {
+      "persistentAppUI": "ENABLED",
+      "cloudWatchMonitoringConfiguration": {
+        "logGroupName": "${CLOUDWATCH_LOG_GROUP}",
+        "logStreamNamePrefix": "fraud-detection"
+      },
+      "s3MonitoringConfiguration": {
+        "logUri": "${S3_BUCKET}/logs/fraud-detection/"
+      }
+    }
+  },
+  "tags": {
+    "Project": "FraudDetection",
+    "Environment": "${ENVIRONMENT:-dev}",
+    "Team": "MLTeam",
+    "CostCenter": "DataScience",
+    "Application": "FeatureEngineering"
+  }
+}

@@ -1,0 +1,53 @@
+# Driver pod template for fraud detection feature engineering
+# Optimized for CPU-based driver operations with sufficient memory for coordination
+apiVersion: v1
+kind: Pod
+metadata:
+  name: fraud-detection-driver
+  namespace: emr-ml-team-a
+  labels:
+    app: fraud-detection
+    component: driver
+    workload-type: feature-engineering
+spec:
+  nodeSelector:
+    NodeGroupType: "spark-driver-cpu-karpenter"  # Use Karpenter for auto-scaling
+  
+  containers:
+  - name: spark-kubernetes-driver  # Required name for EMR on EKS
+    resources:
+      requests:
+        cpu: "2"
+        memory: "8Gi"
+      limits:
+        cpu: "4"
+        memory: "16Gi"
+    env:
+    - name: SPARK_DRIVER_MEMORY
+      value: "8g"
+    - name: SPARK_DRIVER_CORES
+      value: "2"
+    - name: RAPIDS_NO_INITIALIZE
+      value: "1"
+    - name: CUDF_SPILL
+      value: "1"
+    
+  restartPolicy: Never
+  
+  # Tolerations for mixed workload scheduling
+  tolerations:
+  - key: "spark-driver"
+    operator: "Equal"
+    value: "true"
+    effect: "NoSchedule"
+  
+  # Affinity to prefer CPU nodes for driver
+  affinity:
+    nodeAffinity:
+      preferredDuringSchedulingIgnoredDuringExecution:
+      - weight: 100
+        preference:
+          matchExpressions:
+          - key: "node.kubernetes.io/instance-type"
+            operator: In
+            values: ["m5.xlarge", "m5.2xlarge", "m5.4xlarge"]

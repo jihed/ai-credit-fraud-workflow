@@ -12,13 +12,13 @@
   - Verify GPU scheduling works with AL2_x86_64_GPU AMI nodes
   - _Requirements: 1.2, 1.3_
 
-- [ ] 3. Set up Ray cluster for distributed ML training
+- [x] 3. Set up Ray cluster for distributed ML training
   - Deploy KubeRay operator on existing EKS cluster
   - Create Ray cluster configuration for XGBoost distributed training
   - Configure GPU resource allocation for Ray workers using existing GPU nodes
   - _Requirements: 2.1, 2.5_
 
-- [ ] 4. Create EMR on EKS job templates and configurations
+- [x] 4. Create EMR on EKS job templates and configurations
   - Develop Spark job configuration templates with RAPIDS integration
   - Create custom Docker images with RAPIDS libraries (cuDF, cuML, cuGraph)
   - Implement Spark submit scripts for fraud detection feature engineering

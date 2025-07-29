@@ -1,0 +1,178 @@
+apiVersion: karpenter.sh/v1beta1
+kind: NodePool
+metadata:
+  name: ray-gpu-nodepool
+  namespace: karpenter
+spec:
+  template:
+    metadata:
+      labels:
+        type: karpenter
+        NodeGroupType: ray-gpu-karpenter
+        workload: ray-ml
+    spec:
+      requirements:
+        - key: "karpenter.k8s.aws/instance-family"
+          operator: In
+          values: ["g5"]
+        - key: "karpenter.k8s.aws/instance-size"
+          operator: In
+          values: ["2xlarge", "4xlarge", "8xlarge"]
+        - key: "kubernetes.io/arch"
+          operator: In
+          values: ["amd64"]
+        - key: "karpenter.sh/capacity-type"
+          operator: In
+          values: ["spot", "on-demand"]
+        - key: "node.kubernetes.io/instance-type"
+          operator: In
+          values: ["g5.2xlarge", "g5.4xlarge", "g5.8xlarge"]
+      nodeClassRef:
+        apiVersion: karpenter.k8s.aws/v1beta1
+        kind: EC2NodeClass
+        name: ray-gpu-nodeclass
+      taints:
+        - key: nvidia.com/gpu
+          value: "Exists"
+          effect: NoSchedule
+        - key: ray.io/node-type
+          value: "gpu"
+          effect: NoSchedule
+  limits:
+    cpu: 1000
+    memory: 1000Gi
+  disruption:
+    consolidationPolicy: WhenEmpty
+    consolidateAfter: 30s
+    expireAfter: 2160h # 90 days
+  weight: 10
+
+---
+apiVersion: karpenter.k8s.aws/v1beta1
+kind: EC2NodeClass
+metadata:
+  name: ray-gpu-nodeclass
+  namespace: karpenter
+spec:
+  amiFamily: AL2
+  amiSelectorTerms:
+    - tags:
+        karpenter.sh/discovery: "data-on-eks"
+  subnetSelectorTerms:
+    - tags:
+        karpenter.sh/discovery: "data-on-eks"
+  securityGroupSelectorTerms:
+    - tags:
+        karpenter.sh/discovery: "data-on-eks"
+  instanceStorePolicy: RAID0
+  userData: |
+    #!/bin/bash
+    /etc/eks/bootstrap.sh data-on-eks
+    
+    # Configure NVMe volumes in RAID0 configuration for better performance
+    cat <<-EOF > /etc/profile.d/bootstrap.sh
+    #!/bin/sh
+    export LOCAL_DISKS='raid0'
+    EOF
+    
+    # Install additional GPU monitoring tools
+    yum update -y
+    yum install -y htop nvtop
+    
+    # Configure Docker for GPU support
+    systemctl enable docker
+    systemctl start docker
+    
+    # Set up Ray-specific configurations
+    echo 'net.core.somaxconn = 65535' >> /etc/sysctl.conf
+    echo 'net.ipv4.ip_local_port_range = 1024 65535' >> /etc/sysctl.conf
+    sysctl -p
+  tags:
+    Name: "ray-gpu-node"
+    NodeType: "ray-gpu"
+    Workload: "ray-ml"
+
+---
+apiVersion: karpenter.sh/v1beta1
+kind: NodePool
+metadata:
+  name: ray-cpu-nodepool
+  namespace: karpenter
+spec:
+  template:
+    metadata:
+      labels:
+        type: karpenter
+        NodeGroupType: ray-cpu-karpenter
+        workload: ray-ml
+    spec:
+      requirements:
+        - key: "karpenter.k8s.aws/instance-family"
+          operator: In
+          values: ["m5", "m5a", "m5n", "c5", "c5n"]
+        - key: "karpenter.k8s.aws/instance-size"
+          operator: In
+          values: ["xlarge", "2xlarge", "4xlarge", "8xlarge"]
+        - key: "kubernetes.io/arch"
+          operator: In
+          values: ["amd64"]
+        - key: "karpenter.sh/capacity-type"
+          operator: In
+          values: ["spot", "on-demand"]
+      nodeClassRef:
+        apiVersion: karpenter.k8s.aws/v1beta1
+        kind: EC2NodeClass
+        name: ray-cpu-nodeclass
+      taints:
+        - key: ray.io/node-type
+          value: "cpu"
+          effect: NoSchedule
+  limits:
+    cpu: 1000
+    memory: 1000Gi
+  disruption:
+    consolidationPolicy: WhenEmpty
+    consolidateAfter: 30s
+    expireAfter: 2160h # 90 days
+  weight: 20
+
+---
+apiVersion: karpenter.k8s.aws/v1beta1
+kind: EC2NodeClass
+metadata:
+  name: ray-cpu-nodeclass
+  namespace: karpenter
+spec:
+  amiFamily: AL2
+  amiSelectorTerms:
+    - tags:
+        karpenter.sh/discovery: "data-on-eks"
+  subnetSelectorTerms:
+    - tags:
+        karpenter.sh/discovery: "data-on-eks"
+  securityGroupSelectorTerms:
+    - tags:
+        karpenter.sh/discovery: "data-on-eks"
+  instanceStorePolicy: RAID0
+  userData: |
+    #!/bin/bash
+    /etc/eks/bootstrap.sh data-on-eks
+    
+    # Configure NVMe volumes in RAID0 configuration
+    cat <<-EOF > /etc/profile.d/bootstrap.sh
+    #!/bin/sh
+    export LOCAL_DISKS='raid0'
+    EOF
+    
+    # Install additional monitoring tools
+    yum update -y
+    yum install -y htop
+    
+    # Set up Ray-specific configurations
+    echo 'net.core.somaxconn = 65535' >> /etc/sysctl.conf
+    echo 'net.ipv4.ip_local_port_range = 1024 65535' >> /etc/sysctl.conf
+    sysctl -p
+  tags:
+    Name: "ray-cpu-node"
+    NodeType: "ray-cpu"
+    Workload: "ray-ml"

@@ -1,0 +1,71 @@
+# Custom Docker image for Fraud Detection with RAPIDS and EMR 7.0.0 Spark RAPIDS base image
+# This image includes cuDF, cuML, cuGraph for GPU-accelerated data processing
+
+FROM public.ecr.aws/emr-on-eks/spark/emr-7.0.0-spark-rapids:latest
+
+ARG RAPIDS_VERSION=23.12
+ARG PYTHON_VERSION=3.9
+ARG CUDA_VERSION=11.8
+
+USER root
+
+# Install system dependencies
+RUN yum update -y && \
+    yum install -y wget curl git && \
+    yum clean all
+
+# Install conda for RAPIDS packages
+RUN wget https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh -O /tmp/miniconda.sh && \
+    bash /tmp/miniconda.sh -b -p /opt/conda && \
+    rm /tmp/miniconda.sh && \
+    /opt/conda/bin/conda clean -afy
+
+ENV PATH="/opt/conda/bin:${PATH}"
+
+# Create conda environment with RAPIDS
+RUN conda create -n rapids -c rapidsai -c conda-forge -c nvidia \
+    cudf=${RAPIDS_VERSION} \
+    cuml=${RAPIDS_VERSION} \
+    cugraph=${RAPIDS_VERSION} \
+    cuspatial=${RAPIDS_VERSION} \
+    cupy \
+    rmm=${RAPIDS_VERSION} \
+    python=${PYTHON_VERSION} \
+    cudatoolkit=${CUDA_VERSION} \
+    -y
+
+# Activate conda environment and install additional Python packages
+SHELL ["conda", "run", "-n", "rapids", "/bin/bash", "-c"]
+
+# Install additional Python packages for fraud detection
+COPY requirements.txt /tmp/requirements.txt
+RUN conda run -n rapids pip install -r /tmp/requirements.txt
+
+# Install XGBoost with GPU support
+RUN conda run -n rapids pip install xgboost==2.0.3
+
+# Create symbolic links for RAPIDS libraries to be accessible from Spark
+RUN mkdir -p /usr/lib/rapids && \
+    ln -s /opt/conda/envs/rapids/lib/python${PYTHON_VERSION}/site-packages/cudf /usr/lib/rapids/ && \
+    ln -s /opt/conda/envs/rapids/lib/python${PYTHON_VERSION}/site-packages/cuml /usr/lib/rapids/ && \
+    ln -s /opt/conda/envs/rapids/lib/python${PYTHON_VERSION}/site-packages/cugraph /usr/lib/rapids/
+
+# Set environment variables for RAPIDS
+ENV RAPIDS_NO_INITIALIZE=1
+ENV CUDF_SPILL=1
+ENV CUDF_SPILL_DEVICE_LIMIT=0.8
+ENV CUML_CACHE_DIRECTORY=/tmp/cuml_cache
+ENV PYTHONPATH="/opt/conda/envs/rapids/lib/python${PYTHON_VERSION}/site-packages:${PYTHONPATH}"
+
+# Configure conda environment activation
+RUN echo "source /opt/conda/bin/activate rapids" >> /home/hadoop/.bashrc
+
+# Set proper permissions
+RUN chown -R hadoop:hadoop /opt/conda && \
+    chown -R hadoop:hadoop /usr/lib/rapids
+
+USER hadoop:hadoop
+
+# Activate RAPIDS environment by default
+SHELL ["conda", "run", "-n", "rapids", "/bin/bash", "-c"]
+CMD ["conda", "run", "-n", "rapids", "/bin/bash"]

@@ -242,6 +242,21 @@ module "eks_data_addons" {
   # Enable only when NVIDIA GPU Operator is disabled
   enable_nvidia_device_plugin = !(var.enable_nvidia_gpu_operator)
 
+  #---------------------------------------------------------------
+  # KubeRay Operator for distributed ML training
+  #---------------------------------------------------------------
+  enable_kuberay_operator = true
+  kuberay_operator_helm_config = {
+    name             = "kuberay-operator"
+    chart_version    = "1.1.1"
+    repository       = "https://ray-project.github.io/kuberay-helm/"
+    namespace        = "ray-system"
+    create_namespace = true
+    values = [templatefile("${path.module}/helm-values/kuberay-operator-values.yaml", {
+      cluster_name = module.eks.cluster_name
+    })]
+  }
+
 }
 
 #---------------------------------------------------------------

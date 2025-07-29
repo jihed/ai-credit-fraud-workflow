@@ -1,0 +1,229 @@
+#!/usr/bin/env python3
+"""
+Ray XGBoost Distributed Training Example for Fraud Detection
+This script demonstrates how to use Ray for distributed XGBoost training
+on the EKS cluster with GPU acceleration.
+"""
+
+import os
+import time
+import logging
+import pandas as pd
+import numpy as np
+import ray
+from ray import train
+from ray.train import ScalingConfig
+from ray.train.xgboost import XGBoostTrainer
+import xgboost as xgb
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import classification_report, roc_auc_score
+import boto3
+import s3fs
+
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+def load_data_from_s3(bucket_name: str, data_prefix: str) -> pd.DataFrame:
+    """
+    Load fraud detection data from S3
+    """
+    logger.info(f"Loading data from s3://{bucket_name}/{data_prefix}")
+    
+    # Initialize S3 filesystem
+    fs = s3fs.S3FileSystem()
+    
+    # List all parquet files in the prefix
+    files = fs.glob(f"{bucket_name}/{data_prefix}/*.parquet")
+    
+    if not files:
+        raise ValueError(f"No parquet files found in s3://{bucket_name}/{data_prefix}")
+    
+    # Read all parquet files and concatenate
+    dfs = []
+    for file in files[:10]:  # Limit to first 10 files for demo
+        df = pd.read_parquet(f"s3://{file}")
+        dfs.append(df)
+    
+    combined_df = pd.concat(dfs, ignore_index=True)
+    logger.info(f"Loaded {len(combined_df)} records from {len(files)} files")
+    
+    return combined_df
+
+def prepare_features(df: pd.DataFrame) -> tuple:
+    """
+    Prepare features for XGBoost training
+    """
+    logger.info("Preparing features for training")
+    
+    # Select feature columns (excluding target and metadata)
+    feature_cols = [col for col in df.columns if col not in ['TX_FRAUD_1', 'TX_DATETIME', 'CUSTOMER_ID', 'TERMINAL_ID']]
+    
+    X = df[feature_cols].fillna(0)  # Handle missing values
+    y = df['TX_FRAUD_1']
+    
+    # Convert to numpy arrays for better performance
+    X = X.values.astype(np.float32)
+    y = y.values.astype(np.int32)
+    
+    logger.info(f"Feature matrix shape: {X.shape}")
+    logger.info(f"Target distribution: {np.bincount(y)}")
+    
+    return X, y, feature_cols
+
+@ray.remote
+def train_xgboost_distributed():
+    """
+    Distributed XGBoost training function using Ray
+    """
+    # Configuration
+    S3_BUCKET = os.getenv('S3_BUCKET', 'your-fraud-detection-bucket')
+    DATA_PREFIX = os.getenv('DATA_PREFIX', 'processed-data/features')
+    MODEL_OUTPUT_PREFIX = os.getenv('MODEL_OUTPUT_PREFIX', 'models/xgboost')
+    
+    logger.info("Starting distributed XGBoost training")
+    
+    # Load and prepare data
+    df = load_data_from_s3(S3_BUCKET, DATA_PREFIX)
+    X, y, feature_names = prepare_features(df)
+    
+    # Split data
+    X_train, X_test, y_train, y_test = train_test_split(
+        X, y, test_size=0.2, random_state=42, stratify=y
+    )
+    
+    # Convert to Ray datasets
+    train_dataset = ray.data.from_pandas(
+        pd.DataFrame(np.column_stack([X_train, y_train]), 
+                    columns=feature_names + ['target'])
+    )
+    
+    # XGBoost parameters optimized for GPU training
+    xgb_params = {
+        'objective': 'binary:logistic',
+        'eval_metric': 'auc',
+        'tree_method': 'gpu_hist',  # Use GPU acceleration
+        'gpu_id': 0,
+        'max_depth': 6,
+        'learning_rate': 0.1,
+        'subsample': 0.8,
+        'colsample_bytree': 0.8,
+        'min_child_weight': 1,
+        'reg_alpha': 0.1,
+        'reg_lambda': 1.0,
+        'scale_pos_weight': 10,  # Handle class imbalance
+        'random_state': 42
+    }
+    
+    # Configure Ray XGBoost trainer
+    trainer = XGBoostTrainer(
+        scaling_config=ScalingConfig(
+            num_workers=4,  # Number of Ray workers
+            use_gpu=True,   # Enable GPU usage
+            resources_per_worker={"CPU": 4, "GPU": 1}
+        ),
+        label_column="target",
+        params=xgb_params,
+        datasets={"train": train_dataset},
+        num_boost_round=100,
+        run_config=train.RunConfig(
+            name="fraud_detection_xgboost",
+            storage_path=f"s3://{S3_BUCKET}/{MODEL_OUTPUT_PREFIX}",
+            checkpoint_config=train.CheckpointConfig(
+                num_to_keep=3,
+                checkpoint_score_attribute="train-auc",
+                checkpoint_score_order="max"
+            )
+        )
+    )
+    
+    # Train the model
+    logger.info("Starting training...")
+    start_time = time.time()
+    result = trainer.fit()
+    training_time = time.time() - start_time
+    
+    logger.info(f"Training completed in {training_time:.2f} seconds")
+    logger.info(f"Best training AUC: {result.metrics.get('train-auc', 'N/A')}")
+    
+    # Load the trained model for evaluation
+    checkpoint = result.checkpoint
+    model = XGBoostTrainer.get_model(checkpoint)
+    
+    # Evaluate on test set
+    logger.info("Evaluating model on test set...")
+    test_predictions = model.predict(xgb.DMatrix(X_test))
+    test_auc = roc_auc_score(y_test, test_predictions)
+    
+    logger.info(f"Test AUC: {test_auc:.4f}")
+    logger.info("\nClassification Report:")
+    logger.info(classification_report(y_test, (test_predictions > 0.5).astype(int)))
+    
+    # Save model to S3
+    model_path = f"s3://{S3_BUCKET}/{MODEL_OUTPUT_PREFIX}/final_model.xgb"
+    logger.info(f"Saving model to {model_path}")
+    
+    # Save model locally first, then upload to S3
+    local_model_path = "/tmp/fraud_detection_model.xgb"
+    model.save_model(local_model_path)
+    
+    # Upload to S3
+    s3_client = boto3.client('s3')
+    s3_client.upload_file(
+        local_model_path, 
+        S3_BUCKET, 
+        f"{MODEL_OUTPUT_PREFIX}/final_model.xgb"
+    )
+    
+    # Save feature names and model metadata
+    metadata = {
+        'feature_names': feature_names,
+        'training_time': training_time,
+        'test_auc': test_auc,
+        'model_params': xgb_params,
+        'training_samples': len(X_train),
+        'test_samples': len(X_test)
+    }
+    
+    import json
+    metadata_path = f"{MODEL_OUTPUT_PREFIX}/model_metadata.json"
+    s3_client.put_object(
+        Bucket=S3_BUCKET,
+        Key=metadata_path,
+        Body=json.dumps(metadata, indent=2)
+    )
+    
+    logger.info("Training and evaluation completed successfully!")
+    return {
+        'test_auc': test_auc,
+        'training_time': training_time,
+        'model_path': model_path,
+        'metadata_path': f"s3://{S3_BUCKET}/{metadata_path}"
+    }
+
+def main():
+    """
+    Main function to orchestrate the distributed training
+    """
+    # Initialize Ray cluster
+    ray.init(address="ray://fraud-training-cluster-head-svc.ray-ml.svc.cluster.local:10001")
+    
+    logger.info("Ray cluster initialized")
+    logger.info(f"Ray cluster resources: {ray.cluster_resources()}")
+    
+    try:
+        # Submit training job
+        future = train_xgboost_distributed.remote()
+        result = ray.get(future)
+        
+        logger.info("Training job completed successfully!")
+        logger.info(f"Results: {result}")
+        
+    except Exception as e:
+        logger.error(f"Training failed: {str(e)}")
+        raise
+    finally:
+        ray.shutdown()
+
+if __name__ == "__main__":
+    main()
