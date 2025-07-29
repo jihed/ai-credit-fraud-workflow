@@ -1,0 +1,38 @@
+{
+  "name": "fraud-detection-rapids-job",
+  "virtualClusterId": "t1pmuhtn1dzzm0rvnwhw4wz11",
+  "executionRoleArn": "arn:aws:iam::368083780519:role/emr-spark-rapids-emr-ml-team-a",
+  "releaseLabel": "emr-6.15.0-latest",
+  "jobDriver": {
+    "sparkSubmitJobDriver": {
+      "entryPoint": "s3://emr-spark-rapids-spark-20250716152128692500000004/scripts/fraud-detection-rapids.py",
+      "entryPointArguments": [
+        "--input-path", "s3://emr-spark-rapids-spark-20250716152128692500000004/data/",
+        "--output-path", "s3://emr-spark-rapids-spark-20250716152128692500000004/output/"
+      ],
+      "sparkSubmitParameters": "--conf spark.executor.instances=4 --conf spark.executor.memory=30G --conf spark.executor.cores=4 --conf spark.executor.resource.gpu.amount=1 --conf spark.plugins=com.nvidia.spark.SQLPlugin --conf spark.rapids.sql.enabled=true --conf spark.sql.adaptive.enabled=false --conf spark.sql.adaptive.coalescePartitions.enabled=false --conf spark.rapids.sql.concurrentGpuTasks=2 --conf spark.driver.memory=8G --conf spark.driver.cores=2"
+    }
+  },
+  "configurationOverrides": {
+    "applicationConfiguration": [
+      {
+        "classification": "spark-defaults",
+        "properties": {
+          "spark.kubernetes.executor.podTemplateFile": "s3://emr-spark-rapids-spark-20250716152128692500000004/pod-templates/executor-pod-template.yaml",
+          "spark.kubernetes.driver.podTemplateFile": "s3://emr-spark-rapids-spark-20250716152128692500000004/pod-templates/driver-pod-template.yaml"
+        }
+      }
+    ],
+    "monitoringConfiguration": {
+      "cloudWatchMonitoringConfiguration": {
+        "logGroupName": "/emr-on-eks-logs/emr-spark-rapids/emr-ml-team-a/",
+        "logStreamNamePrefix": "fraud-detection-rapids"
+      }
+    }
+  },
+  "tags": {
+    "Environment": "development",
+    "Team": "ml-team-a",
+    "Project": "fraud-detection"
+  }
+}

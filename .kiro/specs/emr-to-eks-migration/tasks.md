@@ -6,7 +6,7 @@
   - Configure Karpenter with existing spark-gpu-karpenter and spark-driver-cpu-karpenter node pools
   - _Requirements: 1.1, 1.4, 1.5_
 
-- [ ] 2. Configure EMR on EKS virtual clusters using existing blueprint
+- [x] 2. Configure EMR on EKS virtual clusters using existing blueprint
   - Use existing EMR virtual cluster configuration for ml-team-a and ml-team-b namespaces
   - Configure NVIDIA device plugin (not GPU Operator) as per existing blueprint
   - Verify GPU scheduling works with AL2_x86_64_GPU AMI nodes
