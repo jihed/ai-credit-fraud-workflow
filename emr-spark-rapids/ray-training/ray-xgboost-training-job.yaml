@@ -1,0 +1,300 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: ray-xgboost-fraud-training
+  namespace: ray-ml
+  labels:
+    app: ray-training
+    workload: fraud-detection
+    job-type: xgboost-training
+    version: v2
+spec:
+  template:
+    metadata:
+      labels:
+        app: ray-training
+        workload: fraud-detection
+        job-type: xgboost-training
+    spec:
+      restartPolicy: Never
+      serviceAccountName: ray-training-sa
+      containers:
+      - name: ray-training-job
+        image: rayproject/ray-ml:2.8.0-gpu
+        imagePullPolicy: IfNotPresent
+        command: ["python"]
+        args: ["/app/ray_xgboost_trainer.py"]
+        env:
+        - name: RAY_DISABLE_IMPORT_WARNING
+          value: "1"
+        - name: PYTHONPATH
+          value: "/app:/opt/ml/code"
+        # Data configuration
+        - name: S3_BUCKET
+          valueFrom:
+            configMapKeyRef:
+              name: training-config
+              key: s3_bucket
+        - name: DATA_PREFIX
+          valueFrom:
+            configMapKeyRef:
+              name: training-config
+              key: data_prefix
+        - name: MODEL_OUTPUT_PREFIX
+          valueFrom:
+            configMapKeyRef:
+              name: training-config
+              key: model_output_prefix
+        # Training configuration
+        - name: NUM_WORKERS
+          valueFrom:
+            configMapKeyRef:
+              name: training-config
+              key: num_workers
+        - name: NUM_BOOST_ROUND
+          valueFrom:
+            configMapKeyRef:
+              name: training-config
+              key: num_boost_round
+        - name: USE_GPU
+          valueFrom:
+            configMapKeyRef:
+              name: training-config
+              key: use_gpu
+        - name: MAX_TRAINING_FILES
+          valueFrom:
+            configMapKeyRef:
+              name: training-config
+              key: max_training_files
+        # Model hyperparameters
+        - name: MAX_DEPTH
+          valueFrom:
+            configMapKeyRef:
+              name: training-config
+              key: max_depth
+        - name: LEARNING_RATE
+          valueFrom:
+            configMapKeyRef:
+              name: training-config
+              key: learning_rate
+        - name: SCALE_POS_WEIGHT
+          valueFrom:
+            configMapKeyRef:
+              name: training-config
+              key: scale_pos_weight
+        # Ray cluster configuration
+        - name: RAY_ADDRESS
+          valueFrom:
+            configMapKeyRef:
+              name: training-config
+              key: ray_address
+        # AWS configuration
+        - name: AWS_DEFAULT_REGION
+          valueFrom:
+            configMapKeyRef:
+              name: training-config
+              key: aws_region
+        # Monitoring configuration
+        - name: ENABLE_CLOUDWATCH
+          valueFrom:
+            configMapKeyRef:
+              name: training-config
+              key: enable_cloudwatch
+        - name: CLOUDWATCH_LOG_GROUP
+          valueFrom:
+            configMapKeyRef:
+              name: training-config
+              key: cloudwatch_log_group
+        resources:
+          requests:
+            cpu: "4"
+            memory: "8Gi"
+          limits:
+            cpu: "8"
+            memory: "16Gi"
+        volumeMounts:
+        - name: training-scripts
+          mountPath: /app
+          readOnly: true
+        - name: aws-credentials
+          mountPath: /root/.aws
+          readOnly: true
+        - name: tmp-storage
+          mountPath: /tmp
+        # Health checks
+        livenessProbe:
+          exec:
+            command:
+            - python
+            - -c
+            - "import ray; ray.init(address='auto', ignore_reinit_error=True); print('Ray connection OK')"
+          initialDelaySeconds: 60
+          periodSeconds: 300
+          timeoutSeconds: 30
+          failureThreshold: 3
+      volumes:
+      - name: training-scripts
+        configMap:
+          name: ray-training-scripts
+          defaultMode: 0755
+      - name: aws-credentials
+        secret:
+          secretName: aws-credentials
+          optional: true
+      - name: tmp-storage
+        emptyDir:
+          sizeLimit: 10Gi
+      nodeSelector:
+        NodeGroupType: core
+      tolerations:
+      - key: "ray-training"
+        operator: "Equal"
+        value: "true"
+        effect: "NoSchedule"
+      affinity:
+        nodeAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            preference:
+              matchExpressions:
+              - key: node.kubernetes.io/instance-type
+                operator: In
+                values: ["m5.xlarge", "m5.2xlarge"]
+  backoffLimit: 2
+  ttlSecondsAfterFinished: 7200  # Keep job for 2 hours after completion
+  activeDeadlineSeconds: 14400   # 4 hour timeout
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: training-config
+  namespace: ray-ml
+data:
+  # Data configuration
+  s3_bucket: "your-fraud-detection-bucket"  # Replace with actual bucket
+  data_prefix: "processed-data/features"
+  model_output_prefix: "models/xgboost"
+  
+  # Training configuration
+  num_workers: "4"
+  num_boost_round: "100"
+  use_gpu: "true"
+  max_training_files: "50"
+  
+  # Model hyperparameters
+  max_depth: "6"
+  learning_rate: "0.1"
+  scale_pos_weight: "10"
+  
+  # Ray cluster configuration
+  ray_address: "ray://fraud-training-cluster-head-svc.ray-ml.svc.cluster.local:10001"
+  
+  # AWS configuration
+  aws_region: "us-west-2"  # Replace with your region
+  
+  # Monitoring configuration
+  enable_cloudwatch: "true"
+  cloudwatch_log_group: "/aws/eks/ray-training"
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ray-training-scripts
+  namespace: ray-ml
+data:
+  ray_xgboost_trainer.py: |
+    # The content of ray_xgboost_trainer.py would be embedded here
+    # For brevity, this is a placeholder - in practice, you would include the full script
+    #!/usr/bin/env python3
+    import sys
+    import os
+    sys.path.append('/app')
+    
+    # Import the actual training script
+    from ray_xgboost_trainer import main
+    
+    if __name__ == "__main__":
+        main()
+  
+  training_monitor.py: |
+    # The content of training_monitor.py would be embedded here
+    # For brevity, this is a placeholder - in practice, you would include the full script
+    pass
+
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: ray-training-sa
+  namespace: ray-ml
+  annotations:
+    eks.amazonaws.com/role-arn: arn:aws:iam::ACCOUNT_ID:role/RayTrainingRole  # Replace with actual role ARN
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  namespace: ray-ml
+  name: ray-training-role
+rules:
+- apiGroups: [""]
+  resources: ["pods", "services", "configmaps", "secrets"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: ["ray.io"]
+  resources: ["rayclusters", "rayjobs"]
+  verbs: ["get", "list", "watch", "create", "update", "patch"]
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: ray-training-rolebinding
+  namespace: ray-ml
+subjects:
+- kind: ServiceAccount
+  name: ray-training-sa
+  namespace: ray-ml
+roleRef:
+  kind: Role
+  name: ray-training-role
+  apiGroup: rbac.authorization.k8s.io
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ray-training-metrics
+  namespace: ray-ml
+  labels:
+    app: ray-training
+    component: metrics
+spec:
+  selector:
+    app: ray-training
+    job-type: xgboost-training
+  ports:
+  - name: metrics
+    port: 8080
+    targetPort: 8080
+    protocol: TCP
+  type: ClusterIP
+
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: ray-training-monitor
+  namespace: ray-ml
+  labels:
+    app: ray-training
+spec:
+  selector:
+    matchLabels:
+      app: ray-training
+      component: metrics
+  endpoints:
+  - port: metrics
+    interval: 30s
+    path: /metrics

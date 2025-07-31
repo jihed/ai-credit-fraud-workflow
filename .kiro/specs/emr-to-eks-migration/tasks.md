@@ -31,14 +31,14 @@
   - Write unit tests for data transformation functions
   - _Requirements: 6.1, 6.2, 6.3_
 
-- [ ] 6. Migrate XGBoost training to Ray-based distributed training
+- [x] 6. Migrate XGBoost training to Ray-based distributed training
   - Convert existing SageMaker training script to Ray Job with distributed XGBoost
   - Implement GPU-accelerated training using existing EMR Spark RAPIDS patterns
   - Create model artifact management for S3 storage compatible with existing pipeline
   - Write training job monitoring and logging functionality
   - _Requirements: 2.2, 2.3, 2.4_
 
-- [ ] 7. Create FastAPI-based inference service
+- [x] 7. Create FastAPI-based inference service
   - Develop FastAPI inference service for XGBoost model serving
   - Implement model loading from S3 using existing patterns
   - Create REST API endpoints for fraud detection predictions

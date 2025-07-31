@@ -1,0 +1,218 @@
+# Kubernetes Deployment for Fraud Detection Inference Service
+# Compatible with EMR Spark RAPIDS EKS cluster configuration
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: fraud-inference
+  namespace: default
+  labels:
+    app: fraud-inference
+    component: inference-service
+    version: v1.0.0
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: fraud-inference
+  template:
+    metadata:
+      labels:
+        app: fraud-inference
+        component: inference-service
+        version: v1.0.0
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8000"
+        prometheus.io/path: "/metrics"
+    spec:
+      serviceAccountName: fraud-inference-sa
+      containers:
+      - name: inference
+        image: fraud-detection/inference:latest
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 8000
+          name: http
+          protocol: TCP
+        env:
+        - name: MODEL_S3_BUCKET
+          valueFrom:
+            configMapKeyRef:
+              name: fraud-inference-config
+              key: s3-bucket
+        - name: MODEL_S3_PREFIX
+          valueFrom:
+            configMapKeyRef:
+              name: fraud-inference-config
+              key: model-prefix
+        - name: MODEL_S3_PATH
+          valueFrom:
+            configMapKeyRef:
+              name: fraud-inference-config
+              key: model-path
+        - name: LOG_LEVEL
+          valueFrom:
+            configMapKeyRef:
+              name: fraud-inference-config
+              key: log-level
+        - name: AWS_DEFAULT_REGION
+          valueFrom:
+            configMapKeyRef:
+              name: fraud-inference-config
+              key: aws-region
+        resources:
+          requests:
+            cpu: "500m"
+            memory: "1Gi"
+          limits:
+            cpu: "2"
+            memory: "4Gi"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8000
+          initialDelaySeconds: 30
+          periodSeconds: 30
+          timeoutSeconds: 10
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8000
+          initialDelaySeconds: 10
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        securityContext:
+          allowPrivilegeEscalation: false
+          runAsNonRoot: true
+          runAsUser: 1000
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop:
+            - ALL
+        volumeMounts:
+        - name: tmp
+          mountPath: /tmp
+      volumes:
+      - name: tmp
+        emptyDir: {}
+      nodeSelector:
+        kubernetes.io/arch: amd64
+        node.kubernetes.io/instance-type: m5.xlarge  # CPU nodes for inference
+      tolerations:
+      - key: "node.kubernetes.io/not-ready"
+        operator: "Exists"
+        effect: "NoExecute"
+        tolerationSeconds: 300
+      - key: "node.kubernetes.io/unreachable"
+        operator: "Exists"
+        effect: "NoExecute"
+        tolerationSeconds: 300
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            podAffinityTerm:
+              labelSelector:
+                matchExpressions:
+                - key: app
+                  operator: In
+                  values:
+                  - fraud-inference
+              topologyKey: kubernetes.io/hostname
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: fraud-inference-service
+  namespace: default
+  labels:
+    app: fraud-inference
+    component: inference-service
+  annotations:
+    service.beta.kubernetes.io/aws-load-balancer-type: nlb
+    service.beta.kubernetes.io/aws-load-balancer-cross-zone-load-balancing-enabled: "true"
+spec:
+  type: LoadBalancer
+  ports:
+  - port: 80
+    targetPort: 8000
+    protocol: TCP
+    name: http
+  selector:
+    app: fraud-inference
+
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: fraud-inference-sa
+  namespace: default
+  labels:
+    app: fraud-inference
+  annotations:
+    eks.amazonaws.com/role-arn: arn:aws:iam::ACCOUNT_ID:role/fraud-inference-role
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: fraud-inference-config
+  namespace: default
+  labels:
+    app: fraud-inference
+data:
+  s3-bucket: "your-fraud-models-bucket"
+  model-prefix: "models/xgboost"
+  model-path: "s3://your-fraud-models-bucket/models/xgboost/latest/model.xgb"
+  log-level: "info"
+  aws-region: "us-west-2"
+
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: fraud-inference-hpa
+  namespace: default
+  labels:
+    app: fraud-inference
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: fraud-inference
+  minReplicas: 2
+  maxReplicas: 20
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 70
+  - type: Resource
+    resource:
+      name: memory
+      target:
+        type: Utilization
+        averageUtilization: 80
+  behavior:
+    scaleDown:
+      stabilizationWindowSeconds: 300
+      policies:
+      - type: Percent
+        value: 10
+        periodSeconds: 60
+    scaleUp:
+      stabilizationWindowSeconds: 60
+      policies:
+      - type: Percent
+        value: 50
+        periodSeconds: 60
+      - type: Pods
+        value: 2
+        periodSeconds: 60
+      selectPolicy: Max
