@@ -331,13 +331,20 @@ def main():
     
     validator = JobConfigValidator()
     
+    # Get the directory of this script
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    
     # Validate local files
-    template_validation = validator.validate_job_template('fraud-detection-job-template.json')
-    pod_validation = validator.validate_pod_templates(
-        'driver-pod-template.yaml', 
-        'executor-pod-template.yaml'
+    template_validation = validator.validate_job_template(
+        os.path.join(script_dir, 'fraud-detection-job-template.json')
     )
-    script_validation = validator.validate_python_script('fraud_detection_feature_engineering.py')
+    pod_validation = validator.validate_pod_templates(
+        os.path.join(script_dir, 'driver-pod-template.yaml'), 
+        os.path.join(script_dir, 'executor-pod-template.yaml')
+    )
+    script_validation = validator.validate_python_script(
+        os.path.join(script_dir, 'fraud_detection_feature_engineering.py')
+    )
     
     # AWS resource validation (optional)
     aws_validation = True
