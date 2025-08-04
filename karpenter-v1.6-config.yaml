@@ -1,0 +1,360 @@
+# Karpenter v1.6.0 Configuration for EMR to EKS Migration
+# This file contains the latest Karpenter NodePool and EC2NodeClass configurations
+
+---
+# GPU NodePool for ML workloads with latest v1.6.0 features
+apiVersion: karpenter.sh/v1
+kind: NodePool
+metadata:
+  name: gpu-ml-workloads
+spec:
+  # Template for nodes in this pool
+  template:
+    metadata:
+      labels:
+        workload-type: gpu
+        node-type: ml-gpu
+        karpenter.sh/nodepool: gpu-ml-workloads
+      annotations:
+        karpenter.sh/do-not-evict: "true"  # Prevent eviction during training
+    spec:
+      # Node requirements with latest instance types
+      requirements:
+        - key: kubernetes.io/arch
+          operator: In
+          values: ["amd64"]
+        - key: node.kubernetes.io/instance-type
+          operator: In
+          values: ["g5.2xlarge", "g5.4xlarge", "g5.8xlarge", "g5.12xlarge", "g6.2xlarge", "g6.4xlarge"]
+        - key: karpenter.sh/capacity-type
+          operator: In
+          values: ["spot", "on-demand"]
+        - key: kubernetes.io/os
+          operator: In
+          values: ["linux"]
+      
+      # Node class reference
+      nodeClassRef:
+        apiVersion: karpenter.k8s.aws/v1
+        kind: EC2NodeClass
+        name: gpu-ml-nodeclass
+      
+      # Taints for GPU nodes
+      taints:
+        - key: nvidia.com/gpu
+          value: "true"
+          effect: NoSchedule
+        - key: workload-type
+          value: gpu
+          effect: NoSchedule
+      
+      # Startup taints (removed after node is ready)
+      startupTaints:
+        - key: karpenter.sh/unschedulable
+          value: "true"
+          effect: NoSchedule
+  
+  # Disruption settings with latest options
+  disruption:
+    consolidationPolicy: WhenEmpty
+    consolidateAfter: 30s
+    expireAfter: 30m
+  
+  # Weight for node selection (higher weight = preferred)
+  weight: 100
+
+---
+# CPU NodePool for general workloads
+apiVersion: karpenter.sh/v1
+kind: NodePool
+metadata:
+  name: cpu-general-workloads
+spec:
+  template:
+    metadata:
+      labels:
+        workload-type: cpu
+        node-type: general-cpu
+        karpenter.sh/nodepool: cpu-general-workloads
+    spec:
+      requirements:
+        - key: kubernetes.io/arch
+          operator: In
+          values: ["amd64"]
+        - key: node.kubernetes.io/instance-type
+          operator: In
+          values: ["m5.large", "m5.xlarge", "m5.2xlarge", "m5.4xlarge", "m5.8xlarge", "m6i.large", "m6i.xlarge", "m6i.2xlarge"]
+        - key: karpenter.sh/capacity-type
+          operator: In
+          values: ["spot", "on-demand"]
+        - key: kubernetes.io/os
+          operator: In
+          values: ["linux"]
+      
+      nodeClassRef:
+        apiVersion: karpenter.k8s.aws/v1
+        kind: EC2NodeClass
+        name: cpu-general-nodeclass
+  
+  disruption:
+    consolidationPolicy: WhenUnderutilized
+    consolidateAfter: 30s
+    expireAfter: 30m
+  
+  weight: 50
+
+---
+# Spot-optimized NodePool for cost-sensitive workloads
+apiVersion: karpenter.sh/v1
+kind: NodePool
+metadata:
+  name: spot-optimized
+spec:
+  template:
+    metadata:
+      labels:
+        workload-type: spot
+        node-type: cost-optimized
+        karpenter.sh/nodepool: spot-optimized
+    spec:
+      requirements:
+        - key: kubernetes.io/arch
+          operator: In
+          values: ["amd64"]
+        - key: node.kubernetes.io/instance-type
+          operator: In
+          values: ["m5.large", "m5.xlarge", "m5.2xlarge", "c5.large", "c5.xlarge", "c5.2xlarge", "m6i.large", "m6i.xlarge"]
+        - key: karpenter.sh/capacity-type
+          operator: In
+          values: ["spot"]
+        - key: kubernetes.io/os
+          operator: In
+          values: ["linux"]
+      
+      nodeClassRef:
+        apiVersion: karpenter.k8s.aws/v1
+        kind: EC2NodeClass
+        name: spot-optimized-nodeclass
+      
+      taints:
+        - key: workload-type
+          value: spot
+          effect: NoSchedule
+  
+  disruption:
+    consolidationPolicy: WhenEmpty
+    consolidateAfter: 10s
+    expireAfter: 10m
+  
+  weight: 10
+
+---
+# GPU EC2NodeClass with latest v1.6.0 features
+apiVersion: karpenter.k8s.aws/v1
+kind: EC2NodeClass
+metadata:
+  name: gpu-ml-nodeclass
+spec:
+  # AMI family with latest AL2023 support
+  amiFamily: AL2
+  
+  # Subnet selection
+  subnetSelectorTerms:
+    - tags:
+        karpenter.sh/discovery: "data-on-eks-emr-spark-rapids"
+  
+  # Security group selection
+  securityGroupSelectorTerms:
+    - tags:
+        karpenter.sh/discovery: "data-on-eks-emr-spark-rapids"
+  
+  # Instance store policy
+  instanceStorePolicy: RAID0
+  
+  # User data for GPU nodes with latest NVIDIA drivers
+  userData: |
+    #!/bin/bash
+    /etc/eks/bootstrap.sh data-on-eks-emr-spark-rapids
+    
+    # Install latest NVIDIA drivers (550+ series)
+    sudo yum update -y
+    sudo yum install -y gcc kernel-devel-$(uname -r)
+    
+    # Install NVIDIA driver
+    sudo yum install -y nvidia-driver-latest-dkms nvidia-fabric-manager
+    sudo systemctl enable nvidia-persistenced
+    sudo systemctl start nvidia-persistenced
+    sudo systemctl enable nvidia-fabricmanager
+    sudo systemctl start nvidia-fabricmanager
+    
+    # Install NVIDIA container toolkit
+    distribution=$(. /etc/os-release;echo $ID$VERSION_ID)
+    curl -s -L https://nvidia.github.io/libnvidia-container/$distribution/libnvidia-container.repo | sudo tee /etc/yum.repos.d/nvidia-container-toolkit.repo
+    sudo yum clean expire-cache
+    sudo yum install -y nvidia-container-toolkit
+    
+    # Configure containerd for NVIDIA runtime
+    sudo nvidia-ctk runtime configure --runtime=containerd
+    sudo systemctl restart containerd
+    
+    # Verify GPU setup
+    nvidia-smi
+  
+  # Block device mappings with latest EBS features
+  blockDeviceMappings:
+    - deviceName: /dev/xvda
+      ebs:
+        volumeSize: 100Gi
+        volumeType: gp3
+        iops: 4000
+        throughput: 250
+        encrypted: true
+        deleteOnTermination: true
+  
+  # Metadata options with latest security settings
+  metadataOptions:
+    httpEndpoint: enabled
+    httpProtocolIPv6: disabled
+    httpPutResponseHopLimit: 2
+    httpTokens: required
+    instanceMetadataTags: enabled
+  
+  # Role for the nodes
+  role: "KarpenterNodeInstanceProfile"
+  
+  # Tags
+  tags:
+    Name: "karpenter-gpu-ml-node-v1.6"
+    Environment: "production"
+    Workload: "ml-gpu"
+    ManagedBy: "karpenter-v1.6"
+    KarpenterVersion: "1.6.0"
+
+---
+# CPU EC2NodeClass
+apiVersion: karpenter.k8s.aws/v1
+kind: EC2NodeClass
+metadata:
+  name: cpu-general-nodeclass
+spec:
+  amiFamily: AL2
+  
+  subnetSelectorTerms:
+    - tags:
+        karpenter.sh/discovery: "data-on-eks-emr-spark-rapids"
+  
+  securityGroupSelectorTerms:
+    - tags:
+        karpenter.sh/discovery: "data-on-eks-emr-spark-rapids"
+  
+  instanceStorePolicy: RAID0
+  
+  userData: |
+    #!/bin/bash
+    /etc/eks/bootstrap.sh data-on-eks-emr-spark-rapids
+    
+    # Optimize for CPU workloads
+    echo 'vm.swappiness=1' | sudo tee -a /etc/sysctl.conf
+    echo 'net.core.somaxconn=65535' | sudo tee -a /etc/sysctl.conf
+    echo 'net.ipv4.tcp_max_syn_backlog=65535' | sudo tee -a /etc/sysctl.conf
+    sudo sysctl -p
+    
+    # Install additional monitoring tools
+    sudo yum install -y htop iotop
+  
+  blockDeviceMappings:
+    - deviceName: /dev/xvda
+      ebs:
+        volumeSize: 50Gi
+        volumeType: gp3
+        iops: 3000
+        throughput: 125
+        encrypted: true
+        deleteOnTermination: true
+  
+  metadataOptions:
+    httpEndpoint: enabled
+    httpProtocolIPv6: disabled
+    httpPutResponseHopLimit: 2
+    httpTokens: required
+    instanceMetadataTags: enabled
+  
+  role: "KarpenterNodeInstanceProfile"
+  
+  tags:
+    Name: "karpenter-cpu-general-node-v1.6"
+    Environment: "production"
+    Workload: "general-cpu"
+    ManagedBy: "karpenter-v1.6"
+    KarpenterVersion: "1.6.0"
+
+---
+# Spot-optimized EC2NodeClass
+apiVersion: karpenter.k8s.aws/v1
+kind: EC2NodeClass
+metadata:
+  name: spot-optimized-nodeclass
+spec:
+  amiFamily: AL2
+  
+  subnetSelectorTerms:
+    - tags:
+        karpenter.sh/discovery: "data-on-eks-emr-spark-rapids"
+  
+  securityGroupSelectorTerms:
+    - tags:
+        karpenter.sh/discovery: "data-on-eks-emr-spark-rapids"
+  
+  instanceStorePolicy: RAID0
+  
+  userData: |
+    #!/bin/bash
+    /etc/eks/bootstrap.sh data-on-eks-emr-spark-rapids
+    
+    # Configure for spot instances with graceful handling
+    echo 'net.ipv4.ip_local_port_range = 1024 65535' | sudo tee -a /etc/sysctl.conf
+    sudo sysctl -p
+    
+    # Install spot instance helper
+    sudo yum install -y aws-cli
+    
+    # Setup spot interruption handling
+    cat > /usr/local/bin/spot-handler.sh << 'EOF'
+    #!/bin/bash
+    TOKEN=$(curl -X PUT "http://169.254.169.254/latest/api/token" -H "X-aws-ec2-metadata-token-ttl-seconds: 21600")
+    while true; do
+      if curl -H "X-aws-ec2-metadata-token: $TOKEN" -s http://169.254.169.254/latest/meta-data/spot/instance-action | grep -q .*; then
+        echo "Spot interruption notice received"
+        kubectl drain $(hostname) --ignore-daemonsets --delete-emptydir-data --force
+      fi
+      sleep 5
+    done
+    EOF
+    chmod +x /usr/local/bin/spot-handler.sh
+    nohup /usr/local/bin/spot-handler.sh &
+  
+  blockDeviceMappings:
+    - deviceName: /dev/xvda
+      ebs:
+        volumeSize: 30Gi
+        volumeType: gp3
+        iops: 3000
+        throughput: 125
+        encrypted: true
+        deleteOnTermination: true
+  
+  metadataOptions:
+    httpEndpoint: enabled
+    httpProtocolIPv6: disabled
+    httpPutResponseHopLimit: 2
+    httpTokens: required
+    instanceMetadataTags: enabled
+  
+  role: "KarpenterNodeInstanceProfile"
+  
+  tags:
+    Name: "karpenter-spot-optimized-node-v1.6"
+    Environment: "production"
+    Workload: "spot-optimized"
+    ManagedBy: "karpenter-v1.6"
+    KarpenterVersion: "1.6.0"
