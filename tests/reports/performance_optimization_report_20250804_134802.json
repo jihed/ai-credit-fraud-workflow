@@ -1,0 +1,390 @@
+{
+  "execution_info": {
+    "start_time": "2025-08-04T13:48:02.973657",
+    "end_time": "2025-08-04T13:48:02.973979",
+    "duration_seconds": 0.000322
+  },
+  "analyses": {
+    "gpu_utilization": {
+      "metrics": {
+        "average_utilization": 68.5,
+        "peak_utilization": 95.2,
+        "idle_time_percentage": 25.3,
+        "memory_utilization": 72.1,
+        "power_consumption_watts": 180.5,
+        "temperature_celsius": 65.2
+      },
+      "analysis": {
+        "utilization_efficiency": 0.685,
+        "idle_waste_cost_per_hour": 0.3036,
+        "optimization_potential": 16.5,
+        "memory_efficiency": 0.721,
+        "thermal_efficiency": 0.18499999999999997
+      },
+      "recommendations": [
+        {
+          "type": "resource_rightsizing",
+          "description": "Consider using smaller GPU instances or implementing GPU sharing",
+          "potential_savings": "0.30 $/hour",
+          "priority": "low",
+          "impact": "low",
+          "effort": "high"
+        },
+        {
+          "type": "workload_scheduling",
+          "description": "Implement better workload scheduling to reduce idle time",
+          "potential_savings": "25.3% cost reduction",
+          "priority": "high",
+          "impact": "high",
+          "effort": "medium"
+        }
+      ],
+      "optimization_score": 61.080000000000005
+    },
+    "cpu_memory": {
+      "metrics": {
+        "cpu_utilization": {
+          "average": 45.2,
+          "peak": 78.5,
+          "p95": 65.3,
+          "requests_vs_usage_ratio": 0.6
+        },
+        "memory_utilization": {
+          "average": 52.8,
+          "peak": 82.1,
+          "p95": 71.4,
+          "requests_vs_usage_ratio": 0.65
+        },
+        "node_utilization": {
+          "average_nodes_active": 8,
+          "peak_nodes_active": 15,
+          "total_nodes_provisioned": 20
+        }
+      },
+      "analysis": {
+        "cpu_efficiency": 0.6,
+        "memory_efficiency": 0.65,
+        "node_efficiency": 0.4,
+        "overprovisioning_waste": {
+          "cpu": 40.0,
+          "memory": 35.0
+        }
+      },
+      "recommendations": [
+        {
+          "type": "cpu_rightsizing",
+          "description": "Reduce CPU requests by 40.0%",
+          "potential_savings": "12.0% cost reduction",
+          "priority": "medium",
+          "impact": "medium",
+          "effort": "low"
+        },
+        {
+          "type": "memory_rightsizing",
+          "description": "Reduce memory requests by 35.0%",
+          "potential_savings": "8.8% cost reduction",
+          "priority": "low",
+          "impact": "low",
+          "effort": "low"
+        },
+        {
+          "type": "cluster_rightsizing",
+          "description": "Optimize cluster auto-scaling parameters to reduce idle nodes",
+          "potential_savings": "60.0% infrastructure cost reduction",
+          "priority": "high",
+          "impact": "high",
+          "effort": "high"
+        }
+      ],
+      "optimization_score": 58.0
+    },
+    "storage": {
+      "metrics": {
+        "ebs_volumes": {
+          "total_provisioned_gb": 5000,
+          "total_used_gb": 2800,
+          "utilization_percentage": 56.0,
+          "cost_per_month": 500.0
+        },
+        "s3_storage": {
+          "total_objects": 1500000,
+          "total_size_gb": 12000,
+          "intelligent_tiering_savings": 180.0,
+          "lifecycle_policy_coverage": 75.0
+        },
+        "efs_storage": {
+          "provisioned_throughput": 100,
+          "average_throughput_used": 35,
+          "cost_per_month": 150.0
+        }
+      },
+      "analysis": {
+        "ebs_efficiency": 0.56,
+        "ebs_overprovisioning": 44.0,
+        "s3_optimization_coverage": 0.75,
+        "efs_efficiency": 0.35
+      },
+      "recommendations": [
+        {
+          "type": "ebs_rightsizing",
+          "description": "Reduce EBS volume sizes by 44.0%",
+          "potential_savings": "$220.00/month",
+          "priority": "high",
+          "impact": "high",
+          "effort": "high"
+        },
+        {
+          "type": "s3_lifecycle_optimization",
+          "description": "Implement lifecycle policies for remaining data",
+          "potential_savings": "$50.00/month",
+          "priority": "low",
+          "impact": "low",
+          "effort": "low"
+        },
+        {
+          "type": "efs_throughput_optimization",
+          "description": "Reduce provisioned throughput or switch to burst mode",
+          "potential_savings": "$65.00/month",
+          "priority": "medium",
+          "impact": "medium",
+          "effort": "high"
+        }
+      ],
+      "optimization_score": 57.400000000000006
+    },
+    "network": {
+      "metrics": {
+        "data_transfer": {
+          "inbound_gb_per_month": 2500,
+          "outbound_gb_per_month": 1800,
+          "inter_az_transfer_gb": 500,
+          "nat_gateway_cost_per_month": 120.0
+        },
+        "load_balancer": {
+          "alb_cost_per_month": 80.0,
+          "nlb_cost_per_month": 45.0,
+          "average_connections": 1500,
+          "peak_connections": 5000
+        },
+        "vpc_endpoints": {
+          "s3_endpoint_cost": 0,
+          "other_endpoints_cost": 25.0,
+          "data_processing_gb": 800
+        }
+      },
+      "analysis": {
+        "inter_az_cost_impact": 5.0,
+        "nat_gateway_efficiency": 1.8,
+        "load_balancer_utilization": 0.3
+      },
+      "recommendations": [
+        {
+          "type": "inter_az_optimization",
+          "description": "Optimize data placement to reduce inter-AZ transfer costs",
+          "potential_savings": "$5.00/month",
+          "priority": "low",
+          "impact": "low",
+          "effort": "high"
+        },
+        {
+          "type": "load_balancer_consolidation",
+          "description": "Consider consolidating load balancers for better utilization",
+          "potential_savings": "$30-50/month",
+          "priority": "low",
+          "impact": "low",
+          "effort": "high"
+        },
+        {
+          "type": "vpc_endpoint_optimization",
+          "description": "Review VPC endpoint usage and optimize based on data transfer patterns",
+          "potential_savings": "$5.00/month",
+          "priority": "low",
+          "impact": "low",
+          "effort": "high"
+        }
+      ],
+      "optimization_score": 38.0
+    },
+    "workload_scheduling": {
+      "metrics": {
+        "job_patterns": {
+          "peak_hours": [
+            9,
+            10,
+            11,
+            14,
+            15,
+            16
+          ],
+          "off_peak_utilization": 25.0,
+          "batch_job_efficiency": 78.5,
+          "interactive_job_efficiency": 65.2
+        },
+        "resource_contention": {
+          "gpu_queue_time_avg_minutes": 8.5,
+          "cpu_queue_time_avg_minutes": 2.1,
+          "memory_pressure_events": 12,
+          "failed_scheduling_events": 3
+        },
+        "auto_scaling": {
+          "scale_up_time_avg_seconds": 45,
+          "scale_down_time_avg_seconds": 180,
+          "unnecessary_scale_events": 8,
+          "cost_of_over_provisioning": 85.0
+        }
+      },
+      "analysis": {
+        "peak_vs_offpeak_ratio": 3.0,
+        "scheduling_efficiency": 71.85,
+        "resource_contention_score": 57.5,
+        "auto_scaling_efficiency": 60
+      },
+      "recommendations": [
+        {
+          "type": "workload_distribution",
+          "description": "Implement workload scheduling to better utilize off-peak hours",
+          "potential_savings": "$60.00/day through spot instances",
+          "priority": "medium",
+          "impact": "medium",
+          "effort": "high"
+        },
+        {
+          "type": "gpu_resource_planning",
+          "description": "Increase GPU capacity or implement better job prioritization",
+          "potential_impact": "Reduce queue time by 5.5 minutes",
+          "effort": "high"
+        },
+        {
+          "type": "auto_scaling_tuning",
+          "description": "Optimize auto-scaling parameters to reduce unnecessary scaling events",
+          "potential_savings": "$25.50/day",
+          "priority": "low",
+          "impact": "low",
+          "effort": "medium"
+        }
+      ],
+      "optimization_score": 63.989999999999995
+    }
+  },
+  "optimization_plan": {
+    "overall_optimization_score": 55.694,
+    "total_recommendations": 14,
+    "high_priority_recommendations": 3,
+    "potential_monthly_savings": 3156.0,
+    "potential_annual_savings": 37872.0,
+    "roi_timeline_months": 6,
+    "prioritized_recommendations": [
+      {
+        "type": "workload_scheduling",
+        "description": "Implement better workload scheduling to reduce idle time",
+        "potential_savings": "25.3% cost reduction",
+        "priority": "high",
+        "impact": "high",
+        "effort": "medium"
+      },
+      {
+        "type": "cluster_rightsizing",
+        "description": "Optimize cluster auto-scaling parameters to reduce idle nodes",
+        "potential_savings": "60.0% infrastructure cost reduction",
+        "priority": "high",
+        "impact": "high",
+        "effort": "high"
+      },
+      {
+        "type": "ebs_rightsizing",
+        "description": "Reduce EBS volume sizes by 44.0%",
+        "potential_savings": "$220.00/month",
+        "priority": "high",
+        "impact": "high",
+        "effort": "high"
+      },
+      {
+        "type": "cpu_rightsizing",
+        "description": "Reduce CPU requests by 40.0%",
+        "potential_savings": "12.0% cost reduction",
+        "priority": "medium",
+        "impact": "medium",
+        "effort": "low"
+      },
+      {
+        "type": "efs_throughput_optimization",
+        "description": "Reduce provisioned throughput or switch to burst mode",
+        "potential_savings": "$65.00/month",
+        "priority": "medium",
+        "impact": "medium",
+        "effort": "high"
+      },
+      {
+        "type": "workload_distribution",
+        "description": "Implement workload scheduling to better utilize off-peak hours",
+        "potential_savings": "$60.00/day through spot instances",
+        "priority": "medium",
+        "impact": "medium",
+        "effort": "high"
+      },
+      {
+        "type": "resource_rightsizing",
+        "description": "Consider using smaller GPU instances or implementing GPU sharing",
+        "potential_savings": "0.30 $/hour",
+        "priority": "low",
+        "impact": "low",
+        "effort": "high"
+      },
+      {
+        "type": "memory_rightsizing",
+        "description": "Reduce memory requests by 35.0%",
+        "potential_savings": "8.8% cost reduction",
+        "priority": "low",
+        "impact": "low",
+        "effort": "low"
+      },
+      {
+        "type": "s3_lifecycle_optimization",
+        "description": "Implement lifecycle policies for remaining data",
+        "potential_savings": "$50.00/month",
+        "priority": "low",
+        "impact": "low",
+        "effort": "low"
+      },
+      {
+        "type": "inter_az_optimization",
+        "description": "Optimize data placement to reduce inter-AZ transfer costs",
+        "potential_savings": "$5.00/month",
+        "priority": "low",
+        "impact": "low",
+        "effort": "high"
+      }
+    ],
+    "implementation_timeline": {
+      "immediate": [],
+      "short_term": [
+        "Implement better workload scheduling to reduce idle time",
+        "Optimize cluster auto-scaling parameters to reduce idle nodes",
+        "Reduce EBS volume sizes by 44.0%",
+        "Reduce CPU requests by 40.0%",
+        "Reduce memory requests by 35.0%",
+        "Implement lifecycle policies for remaining data"
+      ],
+      "medium_term": [
+        "Optimize auto-scaling parameters to reduce unnecessary scaling events"
+      ],
+      "long_term": [
+        "Reduce provisioned throughput or switch to burst mode",
+        "Implement workload scheduling to better utilize off-peak hours",
+        "Consider using smaller GPU instances or implementing GPU sharing",
+        "Optimize data placement to reduce inter-AZ transfer costs",
+        "Consider consolidating load balancers for better utilization",
+        "Review VPC endpoint usage and optimize based on data transfer patterns",
+        "Increase GPU capacity or implement better job prioritization"
+      ]
+    },
+    "quick_wins": []
+  },
+  "summary": {
+    "overall_optimization_score": 55.694,
+    "total_recommendations": 14,
+    "potential_monthly_savings": 3156.0,
+    "potential_annual_savings": 37872.0,
+    "quick_wins_available": 0
+  }
+}
