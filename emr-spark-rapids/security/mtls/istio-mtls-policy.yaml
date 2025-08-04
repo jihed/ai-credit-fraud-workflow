@@ -1,0 +1,131 @@
+# Istio PeerAuthentication for strict mTLS
+apiVersion: security.istio.io/v1beta1
+kind: PeerAuthentication
+metadata:
+  name: default
+  namespace: ml-team-a
+spec:
+  mtls:
+    mode: STRICT
+---
+apiVersion: security.istio.io/v1beta1
+kind: PeerAuthentication
+metadata:
+  name: default
+  namespace: ml-team-b
+spec:
+  mtls:
+    mode: STRICT
+---
+apiVersion: security.istio.io/v1beta1
+kind: PeerAuthentication
+metadata:
+  name: default
+  namespace: ray-system
+spec:
+  mtls:
+    mode: STRICT
+---
+apiVersion: security.istio.io/v1beta1
+kind: PeerAuthentication
+metadata:
+  name: default
+  namespace: fraud-detection
+spec:
+  mtls:
+    mode: STRICT
+---
+apiVersion: security.istio.io/v1beta1
+kind: PeerAuthentication
+metadata:
+  name: default
+  namespace: inference
+spec:
+  mtls:
+    mode: STRICT
+---
+# Authorization policies for service-to-service communication
+apiVersion: security.istio.io/v1beta1
+kind: AuthorizationPolicy
+metadata:
+  name: emr-spark-policy
+  namespace: ml-team-a
+spec:
+  selector:
+    matchLabels:
+      app: spark
+  rules:
+  - from:
+    - source:
+        principals: ["cluster.local/ns/ml-team-a/sa/emr-spark-driver"]
+    - source:
+        principals: ["cluster.local/ns/ml-team-a/sa/emr-spark-executor"]
+    - source:
+        principals: ["cluster.local/ns/monitoring/sa/prometheus-server"]
+  - to:
+    - operation:
+        methods: ["GET", "POST"]
+---
+apiVersion: security.istio.io/v1beta1
+kind: AuthorizationPolicy
+metadata:
+  name: emr-spark-policy
+  namespace: ml-team-b
+spec:
+  selector:
+    matchLabels:
+      app: spark
+  rules:
+  - from:
+    - source:
+        principals: ["cluster.local/ns/ml-team-b/sa/emr-spark-driver"]
+    - source:
+        principals: ["cluster.local/ns/ml-team-b/sa/emr-spark-executor"]
+    - source:
+        principals: ["cluster.local/ns/monitoring/sa/prometheus-server"]
+  - to:
+    - operation:
+        methods: ["GET", "POST"]
+---
+apiVersion: security.istio.io/v1beta1
+kind: AuthorizationPolicy
+metadata:
+  name: ray-cluster-policy
+  namespace: ray-system
+spec:
+  selector:
+    matchLabels:
+      app: ray
+  rules:
+  - from:
+    - source:
+        principals: ["cluster.local/ns/ray-system/sa/ray-head"]
+    - source:
+        principals: ["cluster.local/ns/ray-system/sa/ray-worker"]
+    - source:
+        principals: ["cluster.local/ns/jupyterhub/sa/jupyterhub-hub"]
+    - source:
+        principals: ["cluster.local/ns/monitoring/sa/prometheus-server"]
+  - to:
+    - operation:
+        methods: ["GET", "POST", "PUT"]
+---
+apiVersion: security.istio.io/v1beta1
+kind: AuthorizationPolicy
+metadata:
+  name: inference-service-policy
+  namespace: inference
+spec:
+  selector:
+    matchLabels:
+      app: fraud-inference
+  rules:
+  - from:
+    - source:
+        principals: ["cluster.local/ns/istio-system/sa/istio-ingressgateway-service-account"]
+    - source:
+        principals: ["cluster.local/ns/monitoring/sa/prometheus-server"]
+  - to:
+    - operation:
+        methods: ["GET", "POST"]
+        paths: ["/predict", "/health", "/metrics"]

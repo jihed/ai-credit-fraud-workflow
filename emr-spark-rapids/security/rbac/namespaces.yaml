@@ -1,0 +1,44 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: ml-team-a
+  labels:
+    name: ml-team-a
+    security.policy: restricted
+    istio-injection: enabled
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: ml-team-b
+  labels:
+    name: ml-team-b
+    security.policy: restricted
+    istio-injection: enabled
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: fraud-detection
+  labels:
+    name: fraud-detection
+    security.policy: restricted
+    istio-injection: enabled
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: ray-system
+  labels:
+    name: ray-system
+    security.policy: restricted
+    istio-injection: enabled
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: inference
+  labels:
+    name: inference
+    security.policy: restricted
+    istio-injection: enabled

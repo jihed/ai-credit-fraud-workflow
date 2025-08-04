@@ -1,0 +1,102 @@
+# EBS encryption configuration for EKS nodes
+# This configuration ensures all EBS volumes are encrypted
+
+# KMS Key for EBS encryption
+resource "aws_kms_key" "fraud_detection_ebs" {
+  description             = "KMS key for fraud detection EBS volume encryption"
+  deletion_window_in_days = 7
+  enable_key_rotation     = true
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid    = "Enable IAM User Permissions"
+        Effect = "Allow"
+        Principal = {
+          AWS = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:root"
+        }
+        Action   = "kms:*"
+        Resource = "*"
+      },
+      {
+        Sid    = "Allow EKS and EC2 services"
+        Effect = "Allow"
+        Principal = {
+          Service = [
+            "eks.amazonaws.com",
+            "ec2.amazonaws.com"
+          ]
+        }
+        Action = [
+          "kms:Decrypt",
+          "kms:GenerateDataKey",
+          "kms:CreateGrant"
+        ]
+        Resource = "*"
+      }
+    ]
+  })
+
+  tags = {
+    Name        = "fraud-detection-ebs-key"
+    Environment = var.environment
+    Purpose     = "EBS encryption"
+  }
+}
+
+# KMS Key Alias
+resource "aws_kms_alias" "fraud_detection_ebs" {
+  name          = "alias/fraud-detection-ebs"
+  target_key_id = aws_kms_key.fraud_detection_ebs.key_id
+}
+
+# Launch template with encrypted EBS volumes
+resource "aws_launch_template" "encrypted_nodes" {
+  name_prefix   = "${var.name}-encrypted-nodes-"
+  image_id      = data.aws_ami.eks_default.id
+  instance_type = "m5.xlarge"
+
+  vpc_security_group_ids = [aws_security_group.node_group_one.id]
+
+  block_device_mappings {
+    device_name = "/dev/xvda"
+    ebs {
+      volume_size           = 100
+      volume_type          = "gp3"
+      encrypted            = true
+      kms_key_id          = aws_kms_key.fraud_detection_ebs.arn
+      delete_on_termination = true
+    }
+  }
+
+  user_data = base64encode(templatefile("${path.module}/userdata.sh", {
+    cluster_name        = var.cluster_name
+    cluster_endpoint    = aws_eks_cluster.cluster.endpoint
+    cluster_ca          = aws_eks_cluster.cluster.certificate_authority[0].data
+    bootstrap_arguments = ""
+  }))
+
+  tag_specifications {
+    resource_type = "instance"
+    tags = {
+      Name        = "${var.name}-encrypted-node"
+      Environment = var.environment
+    }
+  }
+}
+
+# StorageClass with encryption
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: encrypted-gp3
+  annotations:
+    storageclass.kubernetes.io/is-default-class: "true"
+provisioner: ebs.csi.aws.com
+parameters:
+  type: gp3
+  encrypted: "true"
+  kmsKeyId: ${KMS_KEY_ID}
+volumeBindingMode: WaitForFirstConsumer
+allowVolumeExpansion: true

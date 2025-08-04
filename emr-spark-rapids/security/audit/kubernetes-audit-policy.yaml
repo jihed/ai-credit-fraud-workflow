@@ -1,0 +1,100 @@
+# Kubernetes audit policy for comprehensive logging
+apiVersion: audit.k8s.io/v1
+kind: Policy
+rules:
+# Log all requests at the Metadata level for secrets, configmaps, and other sensitive resources
+- level: Metadata
+  resources:
+  - group: ""
+    resources: ["secrets", "configmaps", "persistentvolumes", "persistentvolumeclaims"]
+  - group: "apps"
+    resources: ["deployments", "replicasets", "daemonsets", "statefulsets"]
+  - group: "batch"
+    resources: ["jobs", "cronjobs"]
+  - group: "ray.io"
+    resources: ["*"]
+
+# Log all authentication and authorization events
+- level: Request
+  users: ["system:anonymous"]
+  verbs: ["*"]
+
+# Log all service account token requests
+- level: Request
+  resources:
+  - group: ""
+    resources: ["serviceaccounts/token"]
+
+# Log all RBAC changes
+- level: RequestResponse
+  resources:
+  - group: "rbac.authorization.k8s.io"
+    resources: ["*"]
+
+# Log all network policy changes
+- level: RequestResponse
+  resources:
+  - group: "networking.k8s.io"
+    resources: ["networkpolicies"]
+
+# Log all security policy changes
+- level: RequestResponse
+  resources:
+  - group: "security.istio.io"
+    resources: ["*"]
+  - group: "policy"
+    resources: ["*"]
+
+# Log EMR and Ray job submissions and modifications
+- level: RequestResponse
+  namespaces: ["ml-team-a", "ml-team-b", "ray-system", "fraud-detection"]
+  resources:
+  - group: "batch"
+    resources: ["jobs"]
+  - group: "ray.io"
+    resources: ["*"]
+  verbs: ["create", "update", "patch", "delete"]
+
+# Log inference service access
+- level: Request
+  namespaces: ["inference"]
+  resources:
+  - group: ""
+    resources: ["pods", "services"]
+  - group: "apps"
+    resources: ["deployments"]
+  verbs: ["create", "update", "patch", "delete"]
+
+# Log data access through persistent volume claims
+- level: Metadata
+  resources:
+  - group: ""
+    resources: ["persistentvolumeclaims"]
+  verbs: ["create", "update", "patch", "delete"]
+
+# Don't log routine health checks and metrics
+- level: None
+  users: ["system:kube-proxy"]
+  verbs: ["watch"]
+  resources:
+  - group: ""
+    resources: ["endpoints", "services", "services/status"]
+
+- level: None
+  users: ["system:unsecured"]
+  namespaces: ["kube-system"]
+  verbs: ["get"]
+  resources:
+  - group: ""
+    resources: ["configmaps"]
+
+# Don't log routine node status updates
+- level: None
+  users: ["kubelet"]
+  verbs: ["get", "list", "watch"]
+  resources:
+  - group: ""
+    resources: ["nodes", "nodes/status"]
+
+# Default: log everything else at Metadata level
+- level: Metadata

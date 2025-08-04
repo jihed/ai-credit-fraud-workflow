@@ -1,0 +1,128 @@
+# EMR Spark Driver ClusterRoleBindings
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: emr-spark-driver-ml-team-a
+subjects:
+- kind: ServiceAccount
+  name: emr-spark-driver
+  namespace: ml-team-a
+roleRef:
+  kind: ClusterRole
+  name: emr-spark-driver
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: emr-spark-driver-ml-team-b
+subjects:
+- kind: ServiceAccount
+  name: emr-spark-driver
+  namespace: ml-team-b
+roleRef:
+  kind: ClusterRole
+  name: emr-spark-driver
+  apiGroup: rbac.authorization.k8s.io
+---
+# EMR Spark Executor RoleBindings
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: emr-spark-executor
+  namespace: ml-team-a
+subjects:
+- kind: ServiceAccount
+  name: emr-spark-executor
+  namespace: ml-team-a
+roleRef:
+  kind: Role
+  name: emr-spark-executor
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: emr-spark-executor
+  namespace: ml-team-b
+subjects:
+- kind: ServiceAccount
+  name: emr-spark-executor
+  namespace: ml-team-b
+roleRef:
+  kind: Role
+  name: emr-spark-executor
+  apiGroup: rbac.authorization.k8s.io
+---
+# Ray Head ClusterRoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: ray-head
+subjects:
+- kind: ServiceAccount
+  name: ray-head
+  namespace: ray-system
+roleRef:
+  kind: ClusterRole
+  name: ray-head
+  apiGroup: rbac.authorization.k8s.io
+---
+# Ray Worker RoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: ray-worker
+  namespace: ray-system
+subjects:
+- kind: ServiceAccount
+  name: ray-worker
+  namespace: ray-system
+roleRef:
+  kind: Role
+  name: ray-worker
+  apiGroup: rbac.authorization.k8s.io
+---
+# Fraud Detection Processor RoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: fraud-detection-processor
+  namespace: fraud-detection
+subjects:
+- kind: ServiceAccount
+  name: fraud-detection-processor
+  namespace: fraud-detection
+roleRef:
+  kind: Role
+  name: fraud-detection-processor
+  apiGroup: rbac.authorization.k8s.io
+---
+# Inference Service RoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: fraud-inference
+  namespace: inference
+subjects:
+- kind: ServiceAccount
+  name: fraud-inference
+  namespace: inference
+roleRef:
+  kind: Role
+  name: fraud-inference
+  apiGroup: rbac.authorization.k8s.io
+---
+# Monitoring ClusterRoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: prometheus-server
+subjects:
+- kind: ServiceAccount
+  name: prometheus-server
+  namespace: monitoring
+roleRef:
+  kind: ClusterRole
+  name: prometheus-server
+  apiGroup: rbac.authorization.k8s.io

@@ -1,0 +1,200 @@
+# Fluent Bit configuration for application audit logging
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: fluent-bit-audit-config
+  namespace: logging
+data:
+  fluent-bit.conf: |
+    [SERVICE]
+        Flush         1
+        Log_Level     info
+        Daemon        off
+        Parsers_File  parsers.conf
+        HTTP_Server   On
+        HTTP_Listen   0.0.0.0
+        HTTP_Port     2020
+
+    [INPUT]
+        Name              tail
+        Path              /var/log/containers/*fraud-detection*.log
+        Parser            docker
+        Tag               fraud-detection.*
+        Refresh_Interval  5
+        Mem_Buf_Limit     50MB
+        Skip_Long_Lines   On
+
+    [INPUT]
+        Name              tail
+        Path              /var/log/containers/*inference*.log
+        Parser            docker
+        Tag               inference.*
+        Refresh_Interval  5
+        Mem_Buf_Limit     50MB
+        Skip_Long_Lines   On
+
+    [INPUT]
+        Name              tail
+        Path              /var/log/containers/*ray*.log
+        Parser            docker
+        Tag               ray.*
+        Refresh_Interval  5
+        Mem_Buf_Limit     50MB
+        Skip_Long_Lines   On
+
+    [INPUT]
+        Name              tail
+        Path              /var/log/containers/*spark*.log
+        Parser            docker
+        Tag               spark.*
+        Refresh_Interval  5
+        Mem_Buf_Limit     50MB
+        Skip_Long_Lines   On
+
+    [FILTER]
+        Name                kubernetes
+        Match               *
+        Kube_URL            https://kubernetes.default.svc:443
+        Kube_CA_File        /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+        Kube_Token_File     /var/run/secrets/kubernetes.io/serviceaccount/token
+        Kube_Tag_Prefix     kube.var.log.containers.
+        Merge_Log           On
+        Merge_Log_Key       log_processed
+        K8S-Logging.Parser  On
+        K8S-Logging.Exclude Off
+
+    [FILTER]
+        Name                grep
+        Match               *
+        Regex               log (audit|security|access|authentication|authorization|data_access|model_operation)
+
+    [OUTPUT]
+        Name                cloudwatch_logs
+        Match               fraud-detection.*
+        region              ${AWS_REGION}
+        log_group_name      /aws/eks/fraud-detection/audit
+        log_stream_prefix   fraud-detection-
+        auto_create_group   true
+
+    [OUTPUT]
+        Name                cloudwatch_logs
+        Match               inference.*
+        region              ${AWS_REGION}
+        log_group_name      /aws/eks/inference/audit
+        log_stream_prefix   inference-
+        auto_create_group   true
+
+    [OUTPUT]
+        Name                cloudwatch_logs
+        Match               ray.*
+        region              ${AWS_REGION}
+        log_group_name      /aws/eks/ray/audit
+        log_stream_prefix   ray-
+        auto_create_group   true
+
+    [OUTPUT]
+        Name                cloudwatch_logs
+        Match               spark.*
+        region              ${AWS_REGION}
+        log_group_name      /aws/eks/spark/audit
+        log_stream_prefix   spark-
+        auto_create_group   true
+
+  parsers.conf: |
+    [PARSER]
+        Name        docker
+        Format      json
+        Time_Key    time
+        Time_Format %Y-%m-%dT%H:%M:%S.%L
+        Time_Keep   On
+
+    [PARSER]
+        Name        audit
+        Format      regex
+        Regex       ^(?<timestamp>\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z)\s+(?<level>\w+)\s+(?<component>\w+)\s+(?<message>.*)$
+        Time_Key    timestamp
+        Time_Format %Y-%m-%dT%H:%M:%S.%L
+---
+# DaemonSet for Fluent Bit audit logging
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: fluent-bit-audit
+  namespace: logging
+  labels:
+    app: fluent-bit-audit
+spec:
+  selector:
+    matchLabels:
+      app: fluent-bit-audit
+  template:
+    metadata:
+      labels:
+        app: fluent-bit-audit
+    spec:
+      serviceAccountName: fluent-bit-audit
+      containers:
+      - name: fluent-bit
+        image: fluent/fluent-bit:2.1.10
+        ports:
+        - containerPort: 2020
+        env:
+        - name: AWS_REGION
+          value: "${AWS_REGION}"
+        volumeMounts:
+        - name: varlog
+          mountPath: /var/log
+        - name: varlibdockercontainers
+          mountPath: /var/lib/docker/containers
+          readOnly: true
+        - name: fluent-bit-config
+          mountPath: /fluent-bit/etc/
+        resources:
+          limits:
+            memory: 200Mi
+          requests:
+            cpu: 100m
+            memory: 200Mi
+      volumes:
+      - name: varlog
+        hostPath:
+          path: /var/log
+      - name: varlibdockercontainers
+        hostPath:
+          path: /var/lib/docker/containers
+      - name: fluent-bit-config
+        configMap:
+          name: fluent-bit-audit-config
+---
+# Service Account for Fluent Bit
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: fluent-bit-audit
+  namespace: logging
+  annotations:
+    eks.amazonaws.com/role-arn: ${FLUENT_BIT_ROLE_ARN}
+---
+# ClusterRole for Fluent Bit
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: fluent-bit-audit
+rules:
+- apiGroups: [""]
+  resources: ["namespaces", "pods", "nodes"]
+  verbs: ["get", "list", "watch"]
+---
+# ClusterRoleBinding for Fluent Bit
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: fluent-bit-audit
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: fluent-bit-audit
+subjects:
+- kind: ServiceAccount
+  name: fluent-bit-audit
+  namespace: logging

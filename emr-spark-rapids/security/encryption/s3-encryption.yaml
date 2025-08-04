@@ -1,0 +1,93 @@
+# S3 Bucket encryption configuration (applied via Terraform)
+# This is a reference configuration for the Terraform S3 bucket resources
+
+# KMS Key for S3 encryption
+resource "aws_kms_key" "fraud_detection_s3" {
+  description             = "KMS key for fraud detection S3 bucket encryption"
+  deletion_window_in_days = 7
+  enable_key_rotation     = true
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid    = "Enable IAM User Permissions"
+        Effect = "Allow"
+        Principal = {
+          AWS = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:root"
+        }
+        Action   = "kms:*"
+        Resource = "*"
+      },
+      {
+        Sid    = "Allow EMR and EKS services"
+        Effect = "Allow"
+        Principal = {
+          Service = [
+            "emr-containers.amazonaws.com",
+            "eks.amazonaws.com",
+            "s3.amazonaws.com"
+          ]
+        }
+        Action = [
+          "kms:Decrypt",
+          "kms:GenerateDataKey",
+          "kms:CreateGrant"
+        ]
+        Resource = "*"
+      }
+    ]
+  })
+
+  tags = {
+    Name        = "fraud-detection-s3-key"
+    Environment = var.environment
+    Purpose     = "S3 encryption"
+  }
+}
+
+# KMS Key Alias
+resource "aws_kms_alias" "fraud_detection_s3" {
+  name          = "alias/fraud-detection-s3"
+  target_key_id = aws_kms_key.fraud_detection_s3.key_id
+}
+
+# S3 Bucket with encryption
+resource "aws_s3_bucket" "fraud_detection_data" {
+  bucket = "${var.name}-fraud-detection-data-${random_id.bucket_suffix.hex}"
+
+  tags = {
+    Name        = "fraud-detection-data"
+    Environment = var.environment
+  }
+}
+
+resource "aws_s3_bucket_server_side_encryption_configuration" "fraud_detection_data" {
+  bucket = aws_s3_bucket.fraud_detection_data.id
+
+  rule {
+    apply_server_side_encryption_by_default {
+      kms_master_key_id = aws_kms_key.fraud_detection_s3.arn
+      sse_algorithm     = "aws:kms"
+    }
+    bucket_key_enabled = true
+  }
+}
+
+# Block public access
+resource "aws_s3_bucket_public_access_block" "fraud_detection_data" {
+  bucket = aws_s3_bucket.fraud_detection_data.id
+
+  block_public_acls       = true
+  block_public_policy     = true
+  ignore_public_acls      = true
+  restrict_public_buckets = true
+}
+
+# Versioning
+resource "aws_s3_bucket_versioning" "fraud_detection_data" {
+  bucket = aws_s3_bucket.fraud_detection_data.id
+  versioning_configuration {
+    status = "Enabled"
+  }
+}

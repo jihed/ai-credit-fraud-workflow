@@ -1,0 +1,94 @@
+# Pod Security Standards for enhanced security
+# Apply restricted security standards to all workload namespaces
+
+# Pod Security Policy for ml-team-a
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: ml-team-a
+  labels:
+    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/audit: restricted
+    pod-security.kubernetes.io/warn: restricted
+---
+# Pod Security Policy for ml-team-b
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: ml-team-b
+  labels:
+    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/audit: restricted
+    pod-security.kubernetes.io/warn: restricted
+---
+# Pod Security Policy for fraud-detection
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: fraud-detection
+  labels:
+    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/audit: restricted
+    pod-security.kubernetes.io/warn: restricted
+---
+# Pod Security Policy for ray-system (baseline due to Ray requirements)
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: ray-system
+  labels:
+    pod-security.kubernetes.io/enforce: baseline
+    pod-security.kubernetes.io/audit: restricted
+    pod-security.kubernetes.io/warn: restricted
+---
+# Pod Security Policy for inference
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: inference
+  labels:
+    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/audit: restricted
+    pod-security.kubernetes.io/warn: restricted
+---
+# Security Context Constraints for EMR Spark workloads
+apiVersion: v1
+kind: SecurityContextConstraints
+metadata:
+  name: emr-spark-scc
+allowHostDirVolumePlugin: false
+allowHostIPC: false
+allowHostNetwork: false
+allowHostPID: false
+allowHostPorts: false
+allowPrivilegedContainer: false
+allowedCapabilities: []
+defaultAddCapabilities: []
+requiredDropCapabilities:
+- ALL
+fsGroup:
+  type: MustRunAs
+  ranges:
+  - min: 1000
+  - max: 65535
+runAsUser:
+  type: MustRunAsNonRoot
+seLinuxContext:
+  type: MustRunAs
+supplementalGroups:
+  type: MustRunAs
+  ranges:
+  - min: 1000
+  - max: 65535
+volumes:
+- configMap
+- downwardAPI
+- emptyDir
+- persistentVolumeClaim
+- projected
+- secret
+users:
+- system:serviceaccount:ml-team-a:emr-spark-driver
+- system:serviceaccount:ml-team-a:emr-spark-executor
+- system:serviceaccount:ml-team-b:emr-spark-driver
+- system:serviceaccount:ml-team-b:emr-spark-executor
