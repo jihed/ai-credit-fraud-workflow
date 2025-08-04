@@ -45,21 +45,21 @@
   - Write health check endpoints and error handling
   - _Requirements: 3.1, 3.2_
 
-- [ ] 8. Deploy inference service with auto-scaling
+- [x] 8. Deploy inference service with auto-scaling
   - Create Kubernetes Deployment manifests for inference service
   - Configure HPA for CPU/memory-based scaling
   - Implement rolling update strategy for model deployments
   - Set up load balancer and service discovery
   - _Requirements: 3.3, 3.4_
 
-- [ ] 9. Set up JupyterHub for notebook integration
+- [x] 9. Set up JupyterHub for notebook integration
   - Deploy JupyterHub on EKS with GPU-enabled notebook instances
   - Configure shared storage and notebook persistence
   - Create notebook templates with EMR on EKS and Ray cluster connectivity
   - Implement authentication and user management
   - _Requirements: 8.1, 8.2, 8.3_
 
-- [ ] 10. Implement monitoring and observability
+- [x] 10. Implement monitoring and observability
   - Deploy Prometheus and Grafana for metrics collection and visualization
   - Create custom metrics for GPU utilization, job completion times, and cost tracking
   - Set up CloudWatch integration for centralized logging

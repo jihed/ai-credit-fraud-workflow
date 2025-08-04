@@ -1,0 +1,256 @@
+# Advanced Horizontal Pod Autoscaler with custom metrics
+# Task 8: Configure HPA for CPU/memory-based scaling
+# Requirement 3.3: Auto-scale based on CPU/memory metrics using AI on EKS scaling configurations
+
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: fraud-inference-hpa-advanced
+  namespace: fraud-detection
+  labels:
+    app: fraud-inference
+    component: inference-service
+    app.kubernetes.io/name: fraud-inference
+    app.kubernetes.io/component: inference-service
+    app.kubernetes.io/part-of: emr-to-eks-migration
+  annotations:
+    autoscaling.alpha.kubernetes.io/conditions: |
+      [
+        {
+          "type": "AbleToScale",
+          "status": "True",
+          "reason": "ReadyForNewScale"
+        }
+      ]
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: fraud-inference
+  minReplicas: 2
+  maxReplicas: 50
+  metrics:
+  # CPU-based scaling
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 70
+  # Memory-based scaling
+  - type: Resource
+    resource:
+      name: memory
+      target:
+        type: Utilization
+        averageUtilization: 80
+  # Custom metrics for request rate
+  - type: Pods
+    pods:
+      metric:
+        name: fraud_predictions_per_second
+        selector:
+          matchLabels:
+            app: fraud-inference
+      target:
+        type: AverageValue
+        averageValue: "10"
+  # Custom metrics for request latency
+  - type: Pods
+    pods:
+      metric:
+        name: fraud_prediction_duration_seconds
+        selector:
+          matchLabels:
+            app: fraud-inference
+      target:
+        type: AverageValue
+        averageValue: "100m"  # 100ms
+  # External metrics for queue depth (if using message queues)
+  - type: External
+    external:
+      metric:
+        name: sqs_queue_depth
+        selector:
+          matchLabels:
+            queue_name: fraud-prediction-queue
+      target:
+        type: AverageValue
+        averageValue: "5"
+  behavior:
+    scaleDown:
+      stabilizationWindowSeconds: 300  # 5 minutes
+      policies:
+      - type: Percent
+        value: 10
+        periodSeconds: 60
+      - type: Pods
+        value: 2
+        periodSeconds: 60
+      selectPolicy: Min
+    scaleUp:
+      stabilizationWindowSeconds: 60   # 1 minute
+      policies:
+      - type: Percent
+        value: 100
+        periodSeconds: 60
+      - type: Pods
+        value: 4
+        periodSeconds: 60
+      selectPolicy: Max
+
+---
+# Vertical Pod Autoscaler for right-sizing
+# Task 8: Optimize resource allocation
+apiVersion: autoscaling.k8s.io/v1
+kind: VerticalPodAutoscaler
+metadata:
+  name: fraud-inference-vpa
+  namespace: fraud-detection
+  labels:
+    app: fraud-inference
+    component: inference-service
+    app.kubernetes.io/name: fraud-inference
+    app.kubernetes.io/component: inference-service
+    app.kubernetes.io/part-of: emr-to-eks-migration
+spec:
+  targetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: fraud-inference
+  updatePolicy:
+    updateMode: "Auto"
+  resourcePolicy:
+    containerPolicies:
+    - containerName: inference
+      minAllowed:
+        cpu: 100m
+        memory: 512Mi
+      maxAllowed:
+        cpu: 4
+        memory: 8Gi
+      controlledResources: ["cpu", "memory"]
+      controlledValues: RequestsAndLimits
+
+---
+# PodMonitor for custom metrics collection
+# Task 8: Enable custom metrics for advanced auto-scaling
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: fraud-inference-pod-metrics
+  namespace: fraud-detection
+  labels:
+    app: fraud-inference
+    component: inference-service
+    app.kubernetes.io/name: fraud-inference
+    app.kubernetes.io/component: inference-service
+    app.kubernetes.io/part-of: emr-to-eks-migration
+    release: prometheus
+spec:
+  selector:
+    matchLabels:
+      app: fraud-inference
+      component: inference-service
+  podMetricsEndpoints:
+  - port: http
+    path: /metrics
+    interval: 15s
+    scrapeTimeout: 10s
+    honorLabels: true
+    relabelings:
+    - sourceLabels: [__meta_kubernetes_pod_name]
+      targetLabel: pod_name
+    - sourceLabels: [__meta_kubernetes_pod_node_name]
+      targetLabel: node_name
+    - sourceLabels: [__meta_kubernetes_namespace]
+      targetLabel: kubernetes_namespace
+    metricRelabelings:
+    - sourceLabels: [__name__]
+      regex: 'fraud_.*'
+      action: keep
+
+---
+# PrometheusRule for alerting on scaling events
+# Task 8: Monitor auto-scaling behavior
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: fraud-inference-scaling-alerts
+  namespace: fraud-detection
+  labels:
+    app: fraud-inference
+    component: inference-service
+    app.kubernetes.io/name: fraud-inference
+    app.kubernetes.io/component: inference-service
+    app.kubernetes.io/part-of: emr-to-eks-migration
+    release: prometheus
+spec:
+  groups:
+  - name: fraud-inference-scaling
+    interval: 30s
+    rules:
+    - alert: FraudInferenceHighCPU
+      expr: |
+        (
+          sum(rate(container_cpu_usage_seconds_total{namespace="fraud-detection",pod=~"fraud-inference-.*"}[5m])) by (pod) /
+          sum(container_spec_cpu_quota{namespace="fraud-detection",pod=~"fraud-inference-.*"} / container_spec_cpu_period{namespace="fraud-detection",pod=~"fraud-inference-.*"}) by (pod)
+        ) * 100 > 80
+      for: 2m
+      labels:
+        severity: warning
+        component: inference-service
+      annotations:
+        summary: "High CPU usage on fraud inference pod"
+        description: "Pod {{ $labels.pod }} has been using more than 80% CPU for more than 2 minutes"
+    
+    - alert: FraudInferenceHighMemory
+      expr: |
+        (
+          sum(container_memory_working_set_bytes{namespace="fraud-detection",pod=~"fraud-inference-.*"}) by (pod) /
+          sum(container_spec_memory_limit_bytes{namespace="fraud-detection",pod=~"fraud-inference-.*"}) by (pod)
+        ) * 100 > 85
+      for: 2m
+      labels:
+        severity: warning
+        component: inference-service
+      annotations:
+        summary: "High memory usage on fraud inference pod"
+        description: "Pod {{ $labels.pod }} has been using more than 85% memory for more than 2 minutes"
+    
+    - alert: FraudInferenceHighLatency
+      expr: |
+        histogram_quantile(0.95, 
+          sum(rate(fraud_prediction_duration_seconds_bucket{namespace="fraud-detection"}[5m])) by (le)
+        ) > 0.5
+      for: 1m
+      labels:
+        severity: warning
+        component: inference-service
+      annotations:
+        summary: "High prediction latency"
+        description: "95th percentile prediction latency is above 500ms for more than 1 minute"
+    
+    - alert: FraudInferenceScalingEvent
+      expr: |
+        increase(kube_deployment_status_replicas{namespace="fraud-detection",deployment="fraud-inference"}[5m]) > 2
+        or
+        decrease(kube_deployment_status_replicas{namespace="fraud-detection",deployment="fraud-inference"}[5m]) > 2
+      for: 0m
+      labels:
+        severity: info
+        component: inference-service
+      annotations:
+        summary: "Fraud inference service scaling event"
+        description: "Fraud inference deployment has scaled by more than 2 replicas in the last 5 minutes"
+    
+    - alert: FraudInferenceMaxReplicas
+      expr: |
+        kube_deployment_status_replicas{namespace="fraud-detection",deployment="fraud-inference"} >= 45
+      for: 1m
+      labels:
+        severity: critical
+        component: inference-service
+      annotations:
+        summary: "Fraud inference service near maximum replicas"
+        description: "Fraud inference deployment is at or near maximum replicas ({{ $value }}/50)"

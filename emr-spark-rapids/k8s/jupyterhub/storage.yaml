@@ -1,0 +1,37 @@
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: efs-sc
+provisioner: efs.csi.aws.com
+reclaimPolicy: Retain
+allowVolumeExpansion: true
+parameters:
+  provisioningMode: efs-ap
+  fileSystemId: ${EFS_FILE_SYSTEM_ID}
+  directoryPerms: "0755"
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: jupyterhub-shared-data
+  namespace: jupyterhub
+spec:
+  accessModes:
+    - ReadWriteMany
+  storageClassName: efs-sc
+  resources:
+    requests:
+      storage: 100Gi
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: notebook-templates
+  namespace: jupyterhub
+data:
+  emr-spark-rapids-example.ipynb: |
+    ${EMR_NOTEBOOK_TEMPLATE}
+  ray-xgboost-training.ipynb: |
+    ${RAY_NOTEBOOK_TEMPLATE}
+  fraud-detection-pipeline.ipynb: |
+    ${PIPELINE_NOTEBOOK_TEMPLATE}

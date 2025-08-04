@@ -1,0 +1,190 @@
+{
+  "dashboard": {
+    "id": null,
+    "title": "Fraud Detection Pipeline Overview",
+    "tags": ["fraud-detection", "emr", "eks", "rapids"],
+    "style": "dark",
+    "timezone": "browser",
+    "refresh": "30s",
+    "time": {
+      "from": "now-1h",
+      "to": "now"
+    },
+    "panels": [
+      {
+        "id": 1,
+        "title": "Pipeline Health Status",
+        "type": "stat",
+        "targets": [
+          {
+            "expr": "inference:availability:5m",
+            "legendFormat": "Inference Service"
+          },
+          {
+            "expr": "up{job=\"ray-cluster\"}",
+            "legendFormat": "Ray Cluster"
+          },
+          {
+            "expr": "up{job=\"nvidia-dcgm\"}",
+            "legendFormat": "GPU Monitoring"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "color": {
+              "mode": "thresholds"
+            },
+            "thresholds": {
+              "steps": [
+                {"color": "red", "value": 0},
+                {"color": "yellow", "value": 0.8},
+                {"color": "green", "value": 0.95}
+              ]
+            },
+            "unit": "percentunit"
+          }
+        },
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 0}
+      },
+      {
+        "id": 2,
+        "title": "GPU Utilization",
+        "type": "timeseries",
+        "targets": [
+          {
+            "expr": "gpu:utilization:rate5m",
+            "legendFormat": "GPU {{gpu}} on {{kubernetes_node}}"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "color": {"mode": "palette-classic"},
+            "unit": "percent",
+            "min": 0,
+            "max": 100
+          }
+        },
+        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 0}
+      },
+      {
+        "id": 3,
+        "title": "Spark Job Metrics",
+        "type": "timeseries",
+        "targets": [
+          {
+            "expr": "spark:job_completion_rate:5m",
+            "legendFormat": "Completion Rate"
+          },
+          {
+            "expr": "spark:job_failure_rate:5m",
+            "legendFormat": "Failure Rate"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "color": {"mode": "palette-classic"},
+            "unit": "reqps"
+          }
+        },
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 8}
+      },
+      {
+        "id": 4,
+        "title": "Ray Training Jobs",
+        "type": "timeseries",
+        "targets": [
+          {
+            "expr": "ray:job_completion_rate:5m",
+            "legendFormat": "Completion Rate"
+          },
+          {
+            "expr": "ray:worker_count:current",
+            "legendFormat": "Active Workers"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "color": {"mode": "palette-classic"}
+          }
+        },
+        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 8}
+      },
+      {
+        "id": 5,
+        "title": "Inference Service Performance",
+        "type": "timeseries",
+        "targets": [
+          {
+            "expr": "inference:request_rate:5m",
+            "legendFormat": "Request Rate"
+          },
+          {
+            "expr": "inference:request_latency:p95",
+            "legendFormat": "95th Percentile Latency"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "color": {"mode": "palette-classic"}
+          }
+        },
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 16}
+      },
+      {
+        "id": 6,
+        "title": "Cost Tracking",
+        "type": "timeseries",
+        "targets": [
+          {
+            "expr": "cost:gpu_hourly:rate1h",
+            "legendFormat": "GPU Cost/Hour"
+          },
+          {
+            "expr": "cost:cpu_hourly:rate1h",
+            "legendFormat": "CPU Cost/Hour"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "color": {"mode": "palette-classic"},
+            "unit": "currencyUSD"
+          }
+        },
+        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 16}
+      },
+      {
+        "id": 7,
+        "title": "Resource Efficiency",
+        "type": "gauge",
+        "targets": [
+          {
+            "expr": "efficiency:gpu:rate5m",
+            "legendFormat": "GPU Efficiency"
+          },
+          {
+            "expr": "efficiency:job_completion:rate5m",
+            "legendFormat": "Job Success Rate"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "color": {
+              "mode": "thresholds"
+            },
+            "thresholds": {
+              "steps": [
+                {"color": "red", "value": 0},
+                {"color": "yellow", "value": 0.5},
+                {"color": "green", "value": 0.8}
+              ]
+            },
+            "unit": "percentunit",
+            "min": 0,
+            "max": 1
+          }
+        },
+        "gridPos": {"h": 8, "w": 24, "x": 0, "y": 24}
+      }
+    ]
+  }
+}

@@ -1,0 +1,226 @@
+# Ingress for external access to fraud detection inference service
+# Task 8: Set up load balancer and service discovery
+# Requirement 3.3: Auto-scale based on CPU/memory metrics
+# Requirement 3.4: Support rolling updates without downtime
+
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: fraud-inference-ingress
+  namespace: fraud-detection
+  labels:
+    app: fraud-inference
+    component: inference-service
+    app.kubernetes.io/name: fraud-inference
+    app.kubernetes.io/component: inference-service
+    app.kubernetes.io/part-of: emr-to-eks-migration
+  annotations:
+    # AWS Load Balancer Controller annotations
+    kubernetes.io/ingress.class: alb
+    alb.ingress.kubernetes.io/scheme: internal
+    alb.ingress.kubernetes.io/target-type: ip
+    alb.ingress.kubernetes.io/backend-protocol: HTTP
+    alb.ingress.kubernetes.io/healthcheck-path: /health
+    alb.ingress.kubernetes.io/healthcheck-interval-seconds: "30"
+    alb.ingress.kubernetes.io/healthcheck-timeout-seconds: "10"
+    alb.ingress.kubernetes.io/healthy-threshold-count: "2"
+    alb.ingress.kubernetes.io/unhealthy-threshold-count: "3"
+    alb.ingress.kubernetes.io/load-balancer-name: fraud-inference-alb
+    alb.ingress.kubernetes.io/tags: |
+      Environment=production,
+      Application=fraud-detection,
+      Component=inference-service,
+      Project=emr-to-eks-migration
+    # SSL and security
+    alb.ingress.kubernetes.io/ssl-redirect: "443"
+    alb.ingress.kubernetes.io/certificate-arn: arn:aws:acm:us-west-2:ACCOUNT_ID:certificate/CERTIFICATE_ID
+    # Connection settings
+    alb.ingress.kubernetes.io/target-group-attributes: |
+      deregistration_delay.timeout_seconds=30,
+      stickiness.enabled=false,
+      load_balancing.algorithm.type=round_robin
+spec:
+  rules:
+  - host: fraud-inference.internal.company.com
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: fraud-inference-internal
+            port:
+              number: 8000
+      - path: /health
+        pathType: Exact
+        backend:
+          service:
+            name: fraud-inference-internal
+            port:
+              number: 8000
+      - path: /predict
+        pathType: Prefix
+        backend:
+          service:
+            name: fraud-inference-internal
+            port:
+              number: 8000
+      - path: /metrics
+        pathType: Exact
+        backend:
+          service:
+            name: fraud-inference-internal
+            port:
+              number: 8000
+  tls:
+  - hosts:
+    - fraud-inference.internal.company.com
+    secretName: fraud-inference-tls
+
+---
+# ServiceMonitor for Prometheus scraping
+# Task 8: Set up monitoring for auto-scaling metrics
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: fraud-inference-metrics
+  namespace: fraud-detection
+  labels:
+    app: fraud-inference
+    component: inference-service
+    app.kubernetes.io/name: fraud-inference
+    app.kubernetes.io/component: inference-service
+    app.kubernetes.io/part-of: emr-to-eks-migration
+    release: prometheus
+spec:
+  selector:
+    matchLabels:
+      app: fraud-inference
+      component: inference-service
+  endpoints:
+  - port: http
+    path: /metrics
+    interval: 30s
+    scrapeTimeout: 10s
+    honorLabels: true
+  namespaceSelector:
+    matchNames:
+    - fraud-detection
+
+---
+# EndpointSlice for service discovery
+# Task 8: Set up service discovery
+apiVersion: discovery.k8s.io/v1
+kind: EndpointSlice
+metadata:
+  name: fraud-inference-endpoints
+  namespace: fraud-detection
+  labels:
+    app: fraud-inference
+    component: inference-service
+    kubernetes.io/service-name: fraud-inference-internal
+    app.kubernetes.io/name: fraud-inference
+    app.kubernetes.io/component: inference-service
+    app.kubernetes.io/part-of: emr-to-eks-migration
+addressType: IPv4
+ports:
+- name: http
+  port: 8000
+  protocol: TCP
+endpoints: []  # Automatically populated by Kubernetes
+
+---
+# VirtualService for Istio service mesh (optional)
+# Task 8: Advanced load balancing and service discovery
+apiVersion: networking.istio.io/v1beta1
+kind: VirtualService
+metadata:
+  name: fraud-inference-vs
+  namespace: fraud-detection
+  labels:
+    app: fraud-inference
+    component: inference-service
+    app.kubernetes.io/name: fraud-inference
+    app.kubernetes.io/component: inference-service
+    app.kubernetes.io/part-of: emr-to-eks-migration
+spec:
+  hosts:
+  - fraud-inference.internal.company.com
+  - fraud-inference-internal.fraud-detection.svc.cluster.local
+  http:
+  - match:
+    - uri:
+        prefix: /health
+    route:
+    - destination:
+        host: fraud-inference-internal.fraud-detection.svc.cluster.local
+        port:
+          number: 8000
+    timeout: 10s
+    retries:
+      attempts: 3
+      perTryTimeout: 3s
+  - match:
+    - uri:
+        prefix: /predict
+    route:
+    - destination:
+        host: fraud-inference-internal.fraud-detection.svc.cluster.local
+        port:
+          number: 8000
+    timeout: 30s
+    retries:
+      attempts: 2
+      perTryTimeout: 15s
+    fault:
+      delay:
+        percentage:
+          value: 0.1
+        fixedDelay: 5s
+  - match:
+    - uri:
+        prefix: /
+    route:
+    - destination:
+        host: fraud-inference-internal.fraud-detection.svc.cluster.local
+        port:
+          number: 8000
+    timeout: 15s
+
+---
+# DestinationRule for Istio traffic policies
+apiVersion: networking.istio.io/v1beta1
+kind: DestinationRule
+metadata:
+  name: fraud-inference-dr
+  namespace: fraud-detection
+  labels:
+    app: fraud-inference
+    component: inference-service
+    app.kubernetes.io/name: fraud-inference
+    app.kubernetes.io/component: inference-service
+    app.kubernetes.io/part-of: emr-to-eks-migration
+spec:
+  host: fraud-inference-internal.fraud-detection.svc.cluster.local
+  trafficPolicy:
+    connectionPool:
+      tcp:
+        maxConnections: 100
+      http:
+        http1MaxPendingRequests: 50
+        http2MaxRequests: 100
+        maxRequestsPerConnection: 10
+        maxRetries: 3
+        consecutiveGatewayErrors: 5
+        interval: 30s
+        baseEjectionTime: 30s
+        maxEjectionPercent: 50
+    loadBalancer:
+      simple: LEAST_CONN
+    outlierDetection:
+      consecutiveGatewayErrors: 5
+      consecutive5xxErrors: 5
+      interval: 30s
+      baseEjectionTime: 30s
+      maxEjectionPercent: 50
+      minHealthPercent: 50

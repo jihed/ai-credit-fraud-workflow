@@ -1,0 +1,291 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: fraud-detection-alerting-rules
+  namespace: kube-prometheus-stack
+  labels:
+    prometheus: kube-prometheus
+    role: alert-rules
+spec:
+  groups:
+    - name: gpu_alerts
+      rules:
+        - alert: GPUHighUtilization
+          expr: gpu:utilization:rate5m > 90
+          for: 5m
+          labels:
+            severity: warning
+            component: gpu
+          annotations:
+            summary: "High GPU utilization detected"
+            description: "GPU {{ $labels.gpu }} on node {{ $labels.kubernetes_node }} has been running at {{ $value }}% utilization for more than 5 minutes."
+        
+        - alert: GPUHighTemperature
+          expr: gpu:temperature:rate5m > 80
+          for: 2m
+          labels:
+            severity: critical
+            component: gpu
+          annotations:
+            summary: "GPU temperature too high"
+            description: "GPU {{ $labels.gpu }} on node {{ $labels.kubernetes_node }} temperature is {{ $value }}°C, which exceeds the safe threshold."
+        
+        - alert: GPUMemoryExhaustion
+          expr: gpu:memory_utilization:rate5m > 95
+          for: 3m
+          labels:
+            severity: critical
+            component: gpu
+          annotations:
+            summary: "GPU memory nearly exhausted"
+            description: "GPU {{ $labels.gpu }} on node {{ $labels.kubernetes_node }} memory utilization is {{ $value }}%."
+        
+        - alert: GPUNotAvailable
+          expr: up{job="nvidia-dcgm"} == 0
+          for: 1m
+          labels:
+            severity: critical
+            component: gpu
+          annotations:
+            summary: "GPU monitoring unavailable"
+            description: "GPU metrics are not available for node {{ $labels.kubernetes_node }}. GPU workloads may be affected."
+        
+        - alert: GPULowEfficiency
+          expr: efficiency:gpu:rate5m < 0.3
+          for: 10m
+          labels:
+            severity: warning
+            component: efficiency
+          annotations:
+            summary: "Low GPU efficiency detected"
+            description: "GPU efficiency is {{ $value | humanizePercentage }} over the last 5 minutes, indicating potential resource waste."
+
+    - name: spark_job_alerts
+      rules:
+        - alert: SparkJobHighFailureRate
+          expr: spark:job_failure_rate:5m > 0.1
+          for: 5m
+          labels:
+            severity: warning
+            component: spark
+          annotations:
+            summary: "High Spark job failure rate"
+            description: "Spark job failure rate is {{ $value }} failures per second in namespace {{ $labels.namespace }}."
+        
+        - alert: SparkJobLongRunning
+          expr: spark:job_duration:avg5m > 3600
+          for: 0m
+          labels:
+            severity: warning
+            component: spark
+          annotations:
+            summary: "Long running Spark job detected"
+            description: "Spark job {{ $labels.job_name }} in namespace {{ $labels.namespace }} has been running for {{ $value }} seconds."
+        
+        - alert: SparkDriverHighMemoryUsage
+          expr: spark:driver_memory_usage:rate5m > 0.9 * 1024^3
+          for: 5m
+          labels:
+            severity: warning
+            component: spark
+          annotations:
+            summary: "Spark driver high memory usage"
+            description: "Spark driver for job {{ $labels.job_name }} is using {{ $value }} bytes of memory."
+        
+        - alert: SparkExecutorHighMemoryUsage
+          expr: spark:executor_memory_usage:rate5m > 0.9 * 1024^3
+          for: 5m
+          labels:
+            severity: warning
+            component: spark
+          annotations:
+            summary: "Spark executor high memory usage"
+            description: "Spark executors for job {{ $labels.job_name }} are using {{ $value }} bytes of memory on average."
+        
+        - alert: SparkJobStuck
+          expr: changes(spark:job_completion_rate:5m[30m]) == 0 and spark:executor_count:current > 0
+          for: 30m
+          labels:
+            severity: critical
+            component: spark
+          annotations:
+            summary: "Spark job appears stuck"
+            description: "Spark job {{ $labels.job_name }} has not completed any tasks in the last 30 minutes but has active executors."
+
+    - name: ray_cluster_alerts
+      rules:
+        - alert: RayClusterDown
+          expr: up{job="ray-cluster"} == 0
+          for: 1m
+          labels:
+            severity: critical
+            component: ray
+          annotations:
+            summary: "Ray cluster is down"
+            description: "Ray cluster {{ $labels.service }} in namespace {{ $labels.namespace }} is not responding."
+        
+        - alert: RayWorkerNodeDown
+          expr: ray:worker_count:current < 1
+          for: 5m
+          labels:
+            severity: warning
+            component: ray
+          annotations:
+            summary: "Ray cluster has no worker nodes"
+            description: "Ray cluster {{ $labels.cluster_name }} in namespace {{ $labels.namespace }} has no active worker nodes."
+        
+        - alert: RayHighCPUUtilization
+          expr: ray:cpu_utilization:rate5m > 90
+          for: 5m
+          labels:
+            severity: warning
+            component: ray
+          annotations:
+            summary: "Ray cluster high CPU utilization"
+            description: "Ray cluster {{ $labels.cluster_name }} CPU utilization is {{ $value }}%."
+        
+        - alert: RayHighMemoryUtilization
+          expr: ray:memory_utilization:rate5m > 90
+          for: 5m
+          labels:
+            severity: warning
+            component: ray
+          annotations:
+            summary: "Ray cluster high memory utilization"
+            description: "Ray cluster {{ $labels.cluster_name }} memory utilization is {{ $value }}%."
+        
+        - alert: RayTrainingJobFailed
+          expr: increase(ray_job_failure_total[5m]) > 0
+          for: 0m
+          labels:
+            severity: critical
+            component: ray
+          annotations:
+            summary: "Ray training job failed"
+            description: "Ray training job {{ $labels.job_name }} failed in namespace {{ $labels.namespace }}."
+
+    - name: inference_service_alerts
+      rules:
+        - alert: InferenceServiceDown
+          expr: inference:availability:5m < 0.9
+          for: 2m
+          labels:
+            severity: critical
+            component: inference
+          annotations:
+            summary: "Inference service availability low"
+            description: "Fraud detection inference service availability is {{ $value | humanizePercentage }}."
+        
+        - alert: InferenceHighLatency
+          expr: inference:request_latency:p95 > 1
+          for: 5m
+          labels:
+            severity: warning
+            component: inference
+          annotations:
+            summary: "High inference latency"
+            description: "95th percentile inference latency is {{ $value }}s, which exceeds the 1s threshold."
+        
+        - alert: InferenceHighErrorRate
+          expr: inference:error_rate:5m > 0.05
+          for: 3m
+          labels:
+            severity: critical
+            component: inference
+          annotations:
+            summary: "High inference error rate"
+            description: "Inference service error rate is {{ $value | humanizePercentage }}, exceeding 5% threshold."
+        
+        - alert: InferenceLowThroughput
+          expr: inference:request_rate:5m < 1
+          for: 10m
+          labels:
+            severity: warning
+            component: inference
+          annotations:
+            summary: "Low inference throughput"
+            description: "Inference service is processing {{ $value }} requests per second, which is below expected levels."
+        
+        - alert: InferenceModelAccuracyDrop
+          expr: inference:prediction_accuracy:5m < 0.85
+          for: 5m
+          labels:
+            severity: warning
+            component: inference
+          annotations:
+            summary: "Model prediction accuracy dropped"
+            description: "Model prediction accuracy is {{ $value | humanizePercentage }}, below the 85% threshold."
+
+    - name: cost_alerts
+      rules:
+        - alert: HighHourlyCost
+          expr: cost:gpu_hourly:rate1h + cost:cpu_hourly:rate1h > 100
+          for: 1h
+          labels:
+            severity: warning
+            component: cost
+          annotations:
+            summary: "High hourly infrastructure cost"
+            description: "Current hourly cost is ${{ $value }}, exceeding the $100 threshold."
+        
+        - alert: CostTrendIncreasing
+          expr: increase(cost:daily_trend:rate24h[7d]) > 500
+          for: 0m
+          labels:
+            severity: warning
+            component: cost
+          annotations:
+            summary: "Cost trend increasing"
+            description: "Daily cost has increased by ${{ $value }} over the past week."
+        
+        - alert: HighResourceWaste
+          expr: waste:cpu:rate5m > 2 or waste:memory:rate5m > 2*1024^3
+          for: 15m
+          labels:
+            severity: warning
+            component: efficiency
+          annotations:
+            summary: "High resource waste detected"
+            description: "Significant CPU or memory resources are allocated but unused in namespace {{ $labels.namespace }}."
+
+    - name: system_health_alerts
+      rules:
+        - alert: NodeNotReady
+          expr: kube_node_status_condition{condition="Ready",status="true"} == 0
+          for: 5m
+          labels:
+            severity: critical
+            component: cluster
+          annotations:
+            summary: "Node not ready"
+            description: "Node {{ $labels.node }} has been not ready for more than 5 minutes."
+        
+        - alert: PodCrashLooping
+          expr: rate(kube_pod_container_status_restarts_total[15m]) > 0
+          for: 5m
+          labels:
+            severity: warning
+            component: cluster
+          annotations:
+            summary: "Pod crash looping"
+            description: "Pod {{ $labels.pod }} in namespace {{ $labels.namespace }} is crash looping."
+        
+        - alert: PersistentVolumeClaimPending
+          expr: kube_persistentvolumeclaim_status_phase{phase="Pending"} == 1
+          for: 5m
+          labels:
+            severity: warning
+            component: storage
+          annotations:
+            summary: "PVC pending"
+            description: "PVC {{ $labels.persistentvolumeclaim }} in namespace {{ $labels.namespace }} has been pending for more than 5 minutes."
+        
+        - alert: KarpenterNodeProvisioningFailed
+          expr: increase(karpenter_nodes_provisioning_failed_total[10m]) > 0
+          for: 0m
+          labels:
+            severity: warning
+            component: autoscaling
+          annotations:
+            summary: "Karpenter node provisioning failed"
+            description: "Karpenter failed to provision {{ $value }} nodes in the last 10 minutes."

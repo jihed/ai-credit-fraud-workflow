@@ -1,32 +1,53 @@
 # Kubernetes Deployment for Fraud Detection Inference Service
-# Compatible with EMR Spark RAPIDS EKS cluster configuration
+# Task 8: Deploy inference service with auto-scaling
+# Requirements: 3.3 (auto-scaling), 3.4 (rolling updates)
 
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: fraud-inference
-  namespace: default
+  namespace: fraud-detection
   labels:
     app: fraud-inference
     component: inference-service
     version: v1.0.0
+    app.kubernetes.io/name: fraud-inference
+    app.kubernetes.io/component: inference-service
+    app.kubernetes.io/part-of: emr-to-eks-migration
+    app.kubernetes.io/version: v1.0.0
+  annotations:
+    deployment.kubernetes.io/revision: "1"
+    app.kubernetes.io/managed-by: "kubectl"
 spec:
   replicas: 3
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1
+      maxSurge: 1
   selector:
     matchLabels:
       app: fraud-inference
+      component: inference-service
   template:
     metadata:
       labels:
         app: fraud-inference
         component: inference-service
         version: v1.0.0
+        app.kubernetes.io/name: fraud-inference
+        app.kubernetes.io/component: inference-service
+        app.kubernetes.io/part-of: emr-to-eks-migration
+        app.kubernetes.io/version: v1.0.0
       annotations:
         prometheus.io/scrape: "true"
         prometheus.io/port: "8000"
         prometheus.io/path: "/metrics"
+        # Force pod restart on config changes
+        checksum/config: "{{ include (print $.Template.BasePath \"/configmap.yaml\") . | sha256sum }}"
     spec:
       serviceAccountName: fraud-inference-sa
+      terminationGracePeriodSeconds: 30
       containers:
       - name: inference
         image: fraud-detection/inference:latest
@@ -61,6 +82,12 @@ spec:
             configMapKeyRef:
               name: fraud-inference-config
               key: aws-region
+        - name: HOST
+          value: "0.0.0.0"
+        - name: PORT
+          value: "8000"
+        - name: PYTHONPATH
+          value: "/app"
         resources:
           requests:
             cpu: "500m"
@@ -72,22 +99,37 @@ spec:
           httpGet:
             path: /health
             port: 8000
+            scheme: HTTP
           initialDelaySeconds: 30
           periodSeconds: 30
           timeoutSeconds: 10
           failureThreshold: 3
+          successThreshold: 1
         readinessProbe:
           httpGet:
             path: /health
             port: 8000
+            scheme: HTTP
           initialDelaySeconds: 10
           periodSeconds: 10
           timeoutSeconds: 5
           failureThreshold: 3
+          successThreshold: 1
+        startupProbe:
+          httpGet:
+            path: /health
+            port: 8000
+            scheme: HTTP
+          initialDelaySeconds: 10
+          periodSeconds: 5
+          timeoutSeconds: 5
+          failureThreshold: 12
+          successThreshold: 1
         securityContext:
           allowPrivilegeEscalation: false
           runAsNonRoot: true
           runAsUser: 1000
+          runAsGroup: 1000
           readOnlyRootFilesystem: true
           capabilities:
             drop:
@@ -95,12 +137,18 @@ spec:
         volumeMounts:
         - name: tmp
           mountPath: /tmp
+        - name: cache
+          mountPath: /app/.cache
       volumes:
       - name: tmp
-        emptyDir: {}
+        emptyDir:
+          sizeLimit: 1Gi
+      - name: cache
+        emptyDir:
+          sizeLimit: 500Mi
       nodeSelector:
         kubernetes.io/arch: amd64
-        node.kubernetes.io/instance-type: m5.xlarge  # CPU nodes for inference
+        karpenter.sh/nodepool: spark-driver-cpu-karpenter  # Use existing CPU node pool
       tolerations:
       - key: "node.kubernetes.io/not-ready"
         operator: "Exists"
@@ -110,6 +158,9 @@ spec:
         operator: "Exists"
         effect: "NoExecute"
         tolerationSeconds: 300
+      - key: "karpenter.sh/disruption"
+        operator: "Exists"
+        effect: "NoSchedule"
       affinity:
         podAntiAffinity:
           preferredDuringSchedulingIgnoredDuringExecution:
@@ -122,19 +173,48 @@ spec:
                   values:
                   - fraud-inference
               topologyKey: kubernetes.io/hostname
+        nodeAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            preference:
+              matchExpressions:
+              - key: karpenter.sh/capacity-type
+                operator: In
+                values:
+                - spot
+          - weight: 50
+            preference:
+              matchExpressions:
+              - key: node.kubernetes.io/instance-type
+                operator: In
+                values:
+                - m5.xlarge
+                - m5.large
 
 ---
+# Service for load balancing and service discovery
+# Task 8: Set up load balancer and service discovery
 apiVersion: v1
 kind: Service
 metadata:
   name: fraud-inference-service
-  namespace: default
+  namespace: fraud-detection
   labels:
     app: fraud-inference
     component: inference-service
+    app.kubernetes.io/name: fraud-inference
+    app.kubernetes.io/component: inference-service
+    app.kubernetes.io/part-of: emr-to-eks-migration
   annotations:
     service.beta.kubernetes.io/aws-load-balancer-type: nlb
     service.beta.kubernetes.io/aws-load-balancer-cross-zone-load-balancing-enabled: "true"
+    service.beta.kubernetes.io/aws-load-balancer-scheme: internal
+    service.beta.kubernetes.io/aws-load-balancer-backend-protocol: http
+    service.beta.kubernetes.io/aws-load-balancer-healthcheck-path: /health
+    service.beta.kubernetes.io/aws-load-balancer-healthcheck-interval: "30"
+    service.beta.kubernetes.io/aws-load-balancer-healthcheck-timeout: "10"
+    service.beta.kubernetes.io/aws-load-balancer-healthy-threshold: "2"
+    service.beta.kubernetes.io/aws-load-balancer-unhealthy-threshold: "3"
 spec:
   type: LoadBalancer
   ports:
@@ -142,43 +222,92 @@ spec:
     targetPort: 8000
     protocol: TCP
     name: http
+  - port: 8000
+    targetPort: 8000
+    protocol: TCP
+    name: http-direct
   selector:
     app: fraud-inference
+    component: inference-service
+  sessionAffinity: None
 
 ---
+# Internal ClusterIP service for service discovery within cluster
+apiVersion: v1
+kind: Service
+metadata:
+  name: fraud-inference-internal
+  namespace: fraud-detection
+  labels:
+    app: fraud-inference
+    component: inference-service
+    service-type: internal
+    app.kubernetes.io/name: fraud-inference
+    app.kubernetes.io/component: inference-service
+    app.kubernetes.io/part-of: emr-to-eks-migration
+spec:
+  type: ClusterIP
+  ports:
+  - port: 8000
+    targetPort: 8000
+    protocol: TCP
+    name: http
+  selector:
+    app: fraud-inference
+    component: inference-service
+
+---
+# ServiceAccount with IRSA for S3 access
 apiVersion: v1
 kind: ServiceAccount
 metadata:
   name: fraud-inference-sa
-  namespace: default
+  namespace: fraud-detection
   labels:
     app: fraud-inference
+    component: inference-service
+    app.kubernetes.io/name: fraud-inference
+    app.kubernetes.io/component: inference-service
+    app.kubernetes.io/part-of: emr-to-eks-migration
   annotations:
     eks.amazonaws.com/role-arn: arn:aws:iam::ACCOUNT_ID:role/fraud-inference-role
+automountServiceAccountToken: true
 
 ---
+# ConfigMap for application configuration
 apiVersion: v1
 kind: ConfigMap
 metadata:
   name: fraud-inference-config
-  namespace: default
+  namespace: fraud-detection
   labels:
     app: fraud-inference
+    component: inference-service
+    app.kubernetes.io/name: fraud-inference
+    app.kubernetes.io/component: inference-service
+    app.kubernetes.io/part-of: emr-to-eks-migration
 data:
-  s3-bucket: "your-fraud-models-bucket"
+  s3-bucket: "emr-spark-rapids-us-west-2-123456789012"
   model-prefix: "models/xgboost"
-  model-path: "s3://your-fraud-models-bucket/models/xgboost/latest/model.xgb"
+  model-path: "s3://emr-spark-rapids-us-west-2-123456789012/models/xgboost/latest/model.xgb"
   log-level: "info"
   aws-region: "us-west-2"
 
 ---
+# Horizontal Pod Autoscaler for CPU/memory-based scaling
+# Task 8: Configure HPA for CPU/memory-based scaling
+# Requirement 3.3: Auto-scale based on CPU/memory metrics
 apiVersion: autoscaling/v2
 kind: HorizontalPodAutoscaler
 metadata:
   name: fraud-inference-hpa
-  namespace: default
+  namespace: fraud-detection
   labels:
     app: fraud-inference
+    component: inference-service
+    app.kubernetes.io/name: fraud-inference
+    app.kubernetes.io/component: inference-service
+    app.kubernetes.io/part-of: emr-to-eks-migration
 spec:
   scaleTargetRef:
     apiVersion: apps/v1
@@ -206,6 +335,10 @@ spec:
       - type: Percent
         value: 10
         periodSeconds: 60
+      - type: Pods
+        value: 1
+        periodSeconds: 60
+      selectPolicy: Min
     scaleUp:
       stabilizationWindowSeconds: 60
       policies:
@@ -216,3 +349,62 @@ spec:
         value: 2
         periodSeconds: 60
       selectPolicy: Max
+---
+# Pod Disruption Budget to ensure availability during rolling updates
+# Task 8: Implement rolling update strategy for model deployments
+# Requirement 3.4: Support rolling updates without downtime
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: fraud-inference-pdb
+  namespace: fraud-detection
+  labels:
+    app: fraud-inference
+    component: inference-service
+    app.kubernetes.io/name: fraud-inference
+    app.kubernetes.io/component: inference-service
+    app.kubernetes.io/part-of: emr-to-eks-migration
+spec:
+  minAvailable: 2
+  selector:
+    matchLabels:
+      app: fraud-inference
+      component: inference-service
+
+---
+# NetworkPolicy for security (optional, can be enabled based on cluster setup)
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: fraud-inference-netpol
+  namespace: fraud-detection
+  labels:
+    app: fraud-inference
+    component: inference-service
+    app.kubernetes.io/name: fraud-inference
+    app.kubernetes.io/component: inference-service
+    app.kubernetes.io/part-of: emr-to-eks-migration
+spec:
+  podSelector:
+    matchLabels:
+      app: fraud-inference
+      component: inference-service
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          name: fraud-detection
+    - namespaceSelector:
+        matchLabels:
+          name: default
+    - namespaceSelector:
+        matchLabels:
+          name: kube-system
+    ports:
+    - protocol: TCP
+      port: 8000
+  egress:
+  - {} # Allow all egress for S3 access and external dependencies

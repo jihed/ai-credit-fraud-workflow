@@ -1,0 +1,223 @@
+prometheus:
+  prometheusSpec:
+    retention: 24h
+    scrapeInterval: 15s
+    evaluationInterval: 15s
+    scrapeTimeout: 10s
+    storageSpec:
+      volumeClaimTemplate:
+        metadata:
+          name: data
+        spec:
+          storageClassName: gp2
+          accessModes:
+            - ReadWriteOnce
+          resources:
+            requests:
+              storage: 100Gi
+    
+    # Enhanced scrape configs for EMR on EKS and Ray monitoring
+    additionalScrapeConfigs:
+      # EMR on EKS metrics
+      - job_name: 'emr-containers'
+        kubernetes_sd_configs:
+          - role: pod
+            namespaces:
+              names:
+                - ml-team-a
+                - ml-team-b
+        relabel_configs:
+          - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_scrape]
+            action: keep
+            regex: true
+          - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_path]
+            action: replace
+            target_label: __metrics_path__
+            regex: (.+)
+          - source_labels: [__address__, __meta_kubernetes_pod_annotation_prometheus_io_port]
+            action: replace
+            regex: ([^:]+)(?::\d+)?;(\d+)
+            replacement: $1:$2
+            target_label: __address__
+          - action: labelmap
+            regex: __meta_kubernetes_pod_label_(.+)
+          - source_labels: [__meta_kubernetes_namespace]
+            action: replace
+            target_label: kubernetes_namespace
+          - source_labels: [__meta_kubernetes_pod_name]
+            action: replace
+            target_label: kubernetes_pod_name
+      
+      # Ray cluster metrics
+      - job_name: 'ray-cluster'
+        kubernetes_sd_configs:
+          - role: service
+            namespaces:
+              names:
+                - ray-system
+                - ml-team-a
+                - ml-team-b
+        relabel_configs:
+          - source_labels: [__meta_kubernetes_service_label_ray_cluster_name]
+            action: keep
+            regex: .+
+          - source_labels: [__meta_kubernetes_service_port_name]
+            action: keep
+            regex: metrics
+          - source_labels: [__meta_kubernetes_service_name]
+            action: replace
+            target_label: service
+          - source_labels: [__meta_kubernetes_namespace]
+            action: replace
+            target_label: namespace
+      
+      # NVIDIA GPU metrics
+      - job_name: 'nvidia-dcgm'
+        kubernetes_sd_configs:
+          - role: pod
+        relabel_configs:
+          - source_labels: [__meta_kubernetes_pod_label_app]
+            action: keep
+            regex: nvidia-dcgm-exporter
+          - source_labels: [__address__]
+            action: replace
+            regex: ([^:]+)(?::\d+)?
+            replacement: $1:9400
+            target_label: __address__
+          - action: labelmap
+            regex: __meta_kubernetes_pod_label_(.+)
+          - source_labels: [__meta_kubernetes_namespace]
+            action: replace
+            target_label: kubernetes_namespace
+          - source_labels: [__meta_kubernetes_pod_name]
+            action: replace
+            target_label: kubernetes_pod_name
+      
+      # Cost metrics for Kubecost
+      - job_name: kubecost
+        honor_labels: true
+        scrape_interval: 1m
+        scrape_timeout: 10s
+        metrics_path: /metrics
+        scheme: http
+        dns_sd_configs:
+          - names:
+              - kubecost-cost-analyzer.kubecost.svc
+            type: 'A'
+            port: 9003
+      
+      # Inference service metrics
+      - job_name: 'fraud-inference'
+        kubernetes_sd_configs:
+          - role: pod
+            namespaces:
+              names:
+                - fraud-detection
+        relabel_configs:
+          - source_labels: [__meta_kubernetes_pod_label_app]
+            action: keep
+            regex: fraud-inference
+          - source_labels: [__address__]
+            action: replace
+            regex: ([^:]+)(?::\d+)?
+            replacement: $1:8000
+            target_label: __address__
+          - action: labelmap
+            regex: __meta_kubernetes_pod_label_(.+)
+          - source_labels: [__meta_kubernetes_namespace]
+            action: replace
+            target_label: kubernetes_namespace
+          - source_labels: [__meta_kubernetes_pod_name]
+            action: replace
+            target_label: kubernetes_pod_name
+
+    # Recording rules for custom metrics
+    ruleSelector:
+      matchLabels:
+        prometheus: kube-prometheus
+        role: alert-rules
+    
+    # Resource requirements for enhanced monitoring
+    resources:
+      requests:
+        memory: 4Gi
+        cpu: 2
+      limits:
+        memory: 8Gi
+        cpu: 4
+
+# Enable alertmanager for enhanced alerting
+alertmanager:
+  enabled: true
+  alertmanagerSpec:
+    storage:
+      volumeClaimTemplate:
+        metadata:
+          name: alertmanager-data
+        spec:
+          storageClassName: gp2
+          accessModes:
+            - ReadWriteOnce
+          resources:
+            requests:
+              storage: 10Gi
+    resources:
+      requests:
+        memory: 256Mi
+        cpu: 100m
+      limits:
+        memory: 512Mi
+        cpu: 200m
+
+grafana:
+  enabled: true
+  defaultDashboardsEnabled: true
+  adminPassword: "${GRAFANA_PASSWORD}"
+  
+  # Enhanced Grafana configuration
+  grafana.ini:
+    server:
+      root_url: "%(protocol)s://%(domain)s:%(http_port)s/grafana/"
+      serve_from_sub_path: true
+    auth:
+      disable_login_form: false
+    auth.anonymous:
+      enabled: false
+    dashboards:
+      default_home_dashboard_path: /tmp/dashboards/fraud-detection-overview.json
+  
+  # Persistent storage for Grafana
+  persistence:
+    enabled: true
+    storageClassName: gp2
+    size: 10Gi
+  
+  # Resource requirements
+  resources:
+    requests:
+      memory: 512Mi
+      cpu: 250m
+    limits:
+      memory: 1Gi
+      cpu: 500m
+  
+  # Additional data sources
+  additionalDataSources:
+    - name: CloudWatch
+      type: cloudwatch
+      jsonData:
+        defaultRegion: us-west-2
+        authType: default
+      editable: true
+
+# Node exporter configuration for enhanced node metrics
+nodeExporter:
+  enabled: true
+  
+# Kube state metrics for enhanced cluster state monitoring
+kubeStateMetrics:
+  enabled: true
+
+# Service monitor for custom applications
+serviceMonitor:
+  enabled: true

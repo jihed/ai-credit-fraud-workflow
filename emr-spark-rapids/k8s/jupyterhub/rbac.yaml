@@ -1,0 +1,59 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: jupyterhub-hub
+  namespace: jupyterhub
+  annotations:
+    eks.amazonaws.com/role-arn: ${JUPYTERHUB_IRSA_ROLE_ARN}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  namespace: jupyterhub
+  name: jupyterhub-hub
+rules:
+- apiGroups: [""]
+  resources: ["pods", "persistentvolumeclaims", "services", "configmaps", "secrets"]
+  verbs: ["get", "watch", "list", "create", "update", "patch", "delete"]
+- apiGroups: ["apps"]
+  resources: ["deployments", "replicasets"]
+  verbs: ["get", "watch", "list", "create", "update", "patch", "delete"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: jupyterhub-hub
+  namespace: jupyterhub
+subjects:
+- kind: ServiceAccount
+  name: jupyterhub-hub
+  namespace: jupyterhub
+roleRef:
+  kind: Role
+  name: jupyterhub-hub
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: jupyterhub-notebook-reader
+rules:
+- apiGroups: [""]
+  resources: ["nodes", "pods"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: ["metrics.k8s.io"]
+  resources: ["nodes", "pods"]
+  verbs: ["get", "list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: jupyterhub-notebook-reader
+subjects:
+- kind: ServiceAccount
+  name: jupyterhub-notebook-sa
+  namespace: jupyterhub
+roleRef:
+  kind: ClusterRole
+  name: jupyterhub-notebook-reader
+  apiGroup: rbac.authorization.k8s.io

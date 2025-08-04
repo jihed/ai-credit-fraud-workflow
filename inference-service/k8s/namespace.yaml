@@ -1,0 +1,11 @@
+# Namespace for fraud detection inference service
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: fraud-detection
+  labels:
+    name: fraud-detection
+    component: inference
+    app.kubernetes.io/name: fraud-detection
+    app.kubernetes.io/component: inference
+    app.kubernetes.io/part-of: emr-to-eks-migration

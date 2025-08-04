@@ -1,0 +1,166 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: fraud-detection-recording-rules
+  namespace: kube-prometheus-stack
+  labels:
+    prometheus: kube-prometheus
+    role: alert-rules
+spec:
+  groups:
+    - name: gpu_utilization_rules
+      interval: 30s
+      rules:
+        # GPU utilization percentage across all nodes
+        - record: gpu:utilization:rate5m
+          expr: avg(DCGM_FI_DEV_GPU_UTIL) by (gpu, instance, kubernetes_node)
+        
+        # GPU memory utilization percentage
+        - record: gpu:memory_utilization:rate5m
+          expr: (DCGM_FI_DEV_FB_USED / DCGM_FI_DEV_FB_TOTAL) * 100
+        
+        # GPU temperature monitoring
+        - record: gpu:temperature:rate5m
+          expr: avg(DCGM_FI_DEV_GPU_TEMP) by (gpu, instance, kubernetes_node)
+        
+        # GPU power consumption
+        - record: gpu:power_consumption:rate5m
+          expr: avg(DCGM_FI_DEV_POWER_USAGE) by (gpu, instance, kubernetes_node)
+        
+        # Total GPU count per node
+        - record: gpu:count_per_node
+          expr: count(DCGM_FI_DEV_GPU_UTIL) by (kubernetes_node)
+        
+        # Average GPU utilization across cluster
+        - record: cluster:gpu:utilization:avg
+          expr: avg(gpu:utilization:rate5m)
+
+    - name: spark_job_rules
+      interval: 30s
+      rules:
+        # Spark job completion rate
+        - record: spark:job_completion_rate:5m
+          expr: rate(spark_job_completion_total[5m])
+        
+        # Spark job failure rate
+        - record: spark:job_failure_rate:5m
+          expr: rate(spark_job_failure_total[5m])
+        
+        # Average Spark job duration
+        - record: spark:job_duration:avg5m
+          expr: avg(spark_job_duration_seconds) by (job_name, namespace)
+        
+        # Spark executor count per job
+        - record: spark:executor_count:current
+          expr: sum(spark_executor_count) by (job_name, namespace)
+        
+        # Spark driver memory usage
+        - record: spark:driver_memory_usage:rate5m
+          expr: avg(spark_driver_memory_usage_bytes) by (job_name, namespace)
+        
+        # Spark executor memory usage
+        - record: spark:executor_memory_usage:rate5m
+          expr: avg(spark_executor_memory_usage_bytes) by (job_name, namespace)
+
+    - name: ray_job_rules
+      interval: 30s
+      rules:
+        # Ray job completion rate
+        - record: ray:job_completion_rate:5m
+          expr: rate(ray_job_completion_total[5m])
+        
+        # Ray job failure rate
+        - record: ray:job_failure_rate:5m
+          expr: rate(ray_job_failure_total[5m])
+        
+        # Ray cluster worker count
+        - record: ray:worker_count:current
+          expr: sum(ray_cluster_worker_count) by (cluster_name, namespace)
+        
+        # Ray cluster CPU utilization
+        - record: ray:cpu_utilization:rate5m
+          expr: avg(ray_cluster_cpu_utilization) by (cluster_name, namespace)
+        
+        # Ray cluster memory utilization
+        - record: ray:memory_utilization:rate5m
+          expr: avg(ray_cluster_memory_utilization) by (cluster_name, namespace)
+        
+        # Ray training job duration
+        - record: ray:training_duration:avg5m
+          expr: avg(ray_training_job_duration_seconds) by (job_name, namespace)
+
+    - name: inference_service_rules
+      interval: 30s
+      rules:
+        # Inference request rate
+        - record: inference:request_rate:5m
+          expr: rate(http_requests_total{job="fraud-inference"}[5m])
+        
+        # Inference request latency
+        - record: inference:request_latency:p95
+          expr: histogram_quantile(0.95, rate(http_request_duration_seconds_bucket{job="fraud-inference"}[5m]))
+        
+        # Inference error rate
+        - record: inference:error_rate:5m
+          expr: rate(http_requests_total{job="fraud-inference",status=~"5.."}[5m])
+        
+        # Inference service availability
+        - record: inference:availability:5m
+          expr: avg(up{job="fraud-inference"})
+        
+        # Model prediction accuracy (if available)
+        - record: inference:prediction_accuracy:5m
+          expr: avg(model_prediction_accuracy) by (model_version)
+
+    - name: cost_tracking_rules
+      interval: 60s
+      rules:
+        # Hourly cost per namespace
+        - record: cost:namespace_hourly:rate1h
+          expr: avg(kubecost_namespace_hourly_cost) by (namespace)
+        
+        # GPU cost per hour
+        - record: cost:gpu_hourly:rate1h
+          expr: sum(kubecost_node_hourly_cost{instance_type=~"g5.*"})
+        
+        # CPU cost per hour
+        - record: cost:cpu_hourly:rate1h
+          expr: sum(kubecost_node_hourly_cost{instance_type=~"m5.*"})
+        
+        # Cost per Spark job (estimated)
+        - record: cost:spark_job:estimated
+          expr: (spark:job_duration:avg5m / 3600) * cost:gpu_hourly:rate1h
+        
+        # Cost per Ray training job (estimated)
+        - record: cost:ray_training:estimated
+          expr: (ray:training_duration:avg5m / 3600) * cost:gpu_hourly:rate1h
+        
+        # Daily cost trend
+        - record: cost:daily_trend:rate24h
+          expr: increase(kubecost_cluster_hourly_cost[24h])
+
+    - name: resource_efficiency_rules
+      interval: 60s
+      rules:
+        # GPU efficiency (utilization vs availability)
+        - record: efficiency:gpu:rate5m
+          expr: cluster:gpu:utilization:avg / 100
+        
+        # CPU efficiency per namespace
+        - record: efficiency:cpu:namespace:rate5m
+          expr: avg(rate(container_cpu_usage_seconds_total[5m])) by (namespace) / avg(kube_pod_container_resource_requests{resource="cpu"}) by (namespace)
+        
+        # Memory efficiency per namespace
+        - record: efficiency:memory:namespace:rate5m
+          expr: avg(container_memory_working_set_bytes) by (namespace) / avg(kube_pod_container_resource_requests{resource="memory"}) by (namespace)
+        
+        # Job completion efficiency (successful vs total)
+        - record: efficiency:job_completion:rate5m
+          expr: spark:job_completion_rate:5m / (spark:job_completion_rate:5m + spark:job_failure_rate:5m)
+        
+        # Resource waste (allocated but unused)
+        - record: waste:cpu:rate5m
+          expr: avg(kube_pod_container_resource_requests{resource="cpu"}) by (namespace) - avg(rate(container_cpu_usage_seconds_total[5m])) by (namespace)
+        
+        - record: waste:memory:rate5m
+          expr: avg(kube_pod_container_resource_requests{resource="memory"}) by (namespace) - avg(container_memory_working_set_bytes) by (namespace)
