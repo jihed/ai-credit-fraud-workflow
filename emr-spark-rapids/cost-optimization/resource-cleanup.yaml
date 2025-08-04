@@ -1,0 +1,500 @@
+# Automatic Resource Cleanup for Completed Jobs
+
+---
+# ServiceAccount for cleanup jobs
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: resource-cleanup
+  namespace: kube-system
+  annotations:
+    eks.amazonaws.com/role-arn: arn:aws:iam::ACCOUNT_ID:role/ResourceCleanupRole
+
+---
+# ClusterRole for cleanup operations
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: resource-cleanup
+rules:
+- apiGroups: [""]
+  resources: ["pods", "persistentvolumeclaims", "configmaps", "secrets"]
+  verbs: ["get", "list", "delete"]
+- apiGroups: ["apps"]
+  resources: ["deployments", "replicasets", "jobs"]
+  verbs: ["get", "list", "delete"]
+- apiGroups: ["batch"]
+  resources: ["jobs", "cronjobs"]
+  verbs: ["get", "list", "delete"]
+- apiGroups: ["sparkoperator.k8s.io"]
+  resources: ["sparkapplications", "scheduledsparkapplications"]
+  verbs: ["get", "list", "delete"]
+- apiGroups: ["ray.io"]
+  resources: ["rayjobs", "rayclusters", "rayservices"]
+  verbs: ["get", "list", "delete"]
+- apiGroups: [""]
+  resources: ["events"]
+  verbs: ["create"]
+
+---
+# ClusterRoleBinding for cleanup service account
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: resource-cleanup
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: resource-cleanup
+subjects:
+- kind: ServiceAccount
+  name: resource-cleanup
+  namespace: kube-system
+
+---
+# CronJob for cleaning up completed Spark applications
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: spark-cleanup
+  namespace: kube-system
+  labels:
+    app: resource-cleanup
+    component: spark-cleanup
+spec:
+  schedule: "*/15 * * * *"  # Run every 15 minutes
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      template:
+        metadata:
+          labels:
+            app: resource-cleanup
+            component: spark-cleanup
+        spec:
+          serviceAccountName: resource-cleanup
+          restartPolicy: OnFailure
+          containers:
+          - name: cleanup
+            image: bitnami/kubectl:latest
+            command:
+            - /bin/bash
+            - -c
+            - |
+              set -e
+              echo "Starting Spark application cleanup..."
+              
+              # Clean up completed Spark applications older than 1 hour
+              kubectl get sparkapplications --all-namespaces -o json | \
+              jq -r '.items[] | select(.status.applicationState.state == "COMPLETED" and 
+                     (.status.terminationTime // .status.lastSubmissionAttemptTime // now) < (now - 3600)) | 
+                     "\(.metadata.namespace) \(.metadata.name)"' | \
+              while read namespace name; do
+                if [ -n "$namespace" ] && [ -n "$name" ]; then
+                  echo "Deleting completed Spark application: $namespace/$name"
+                  kubectl delete sparkapplication "$name" -n "$namespace" --ignore-not-found=true
+                fi
+              done
+              
+              # Clean up failed Spark applications older than 2 hours
+              kubectl get sparkapplications --all-namespaces -o json | \
+              jq -r '.items[] | select(.status.applicationState.state == "FAILED" and 
+                     (.status.terminationTime // .status.lastSubmissionAttemptTime // now) < (now - 7200)) | 
+                     "\(.metadata.namespace) \(.metadata.name)"' | \
+              while read namespace name; do
+                if [ -n "$namespace" ] && [ -n "$name" ]; then
+                  echo "Deleting failed Spark application: $namespace/$name"
+                  kubectl delete sparkapplication "$name" -n "$namespace" --ignore-not-found=true
+                fi
+              done
+              
+              # Clean up orphaned Spark driver and executor pods
+              kubectl get pods --all-namespaces -l spark-role=driver -o json | \
+              jq -r '.items[] | select(.status.phase == "Succeeded" or .status.phase == "Failed") | 
+                     select((.status.containerStatuses[0].state.terminated.finishedAt // now) < (now - 1800)) |
+                     "\(.metadata.namespace) \(.metadata.name)"' | \
+              while read namespace name; do
+                if [ -n "$namespace" ] && [ -n "$name" ]; then
+                  echo "Deleting orphaned Spark driver pod: $namespace/$name"
+                  kubectl delete pod "$name" -n "$namespace" --ignore-not-found=true
+                fi
+              done
+              
+              kubectl get pods --all-namespaces -l spark-role=executor -o json | \
+              jq -r '.items[] | select(.status.phase == "Succeeded" or .status.phase == "Failed") | 
+                     select((.status.containerStatuses[0].state.terminated.finishedAt // now) < (now - 1800)) |
+                     "\(.metadata.namespace) \(.metadata.name)"' | \
+              while read namespace name; do
+                if [ -n "$namespace" ] && [ -n "$name" ]; then
+                  echo "Deleting orphaned Spark executor pod: $namespace/$name"
+                  kubectl delete pod "$name" -n "$namespace" --ignore-not-found=true
+                fi
+              done
+              
+              echo "Spark cleanup completed"
+            resources:
+              requests:
+                memory: 64Mi
+                cpu: 50m
+              limits:
+                memory: 128Mi
+                cpu: 100m
+
+---
+# CronJob for cleaning up completed Ray jobs
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: ray-cleanup
+  namespace: kube-system
+  labels:
+    app: resource-cleanup
+    component: ray-cleanup
+spec:
+  schedule: "*/20 * * * *"  # Run every 20 minutes
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      template:
+        metadata:
+          labels:
+            app: resource-cleanup
+            component: ray-cleanup
+        spec:
+          serviceAccountName: resource-cleanup
+          restartPolicy: OnFailure
+          containers:
+          - name: cleanup
+            image: bitnami/kubectl:latest
+            command:
+            - /bin/bash
+            - -c
+            - |
+              set -e
+              echo "Starting Ray job cleanup..."
+              
+              # Clean up completed Ray jobs older than 1 hour
+              kubectl get rayjobs --all-namespaces -o json | \
+              jq -r '.items[] | select(.status.jobStatus == "SUCCEEDED" and 
+                     (.status.endTime // now) < (now - 3600)) | 
+                     "\(.metadata.namespace) \(.metadata.name)"' | \
+              while read namespace name; do
+                if [ -n "$namespace" ] && [ -n "$name" ]; then
+                  echo "Deleting completed Ray job: $namespace/$name"
+                  kubectl delete rayjob "$name" -n "$namespace" --ignore-not-found=true
+                fi
+              done
+              
+              # Clean up failed Ray jobs older than 2 hours
+              kubectl get rayjobs --all-namespaces -o json | \
+              jq -r '.items[] | select(.status.jobStatus == "FAILED" and 
+                     (.status.endTime // now) < (now - 7200)) | 
+                     "\(.metadata.namespace) \(.metadata.name)"' | \
+              while read namespace name; do
+                if [ -n "$namespace" ] && [ -n "$name" ]; then
+                  echo "Deleting failed Ray job: $namespace/$name"
+                  kubectl delete rayjob "$name" -n "$namespace" --ignore-not-found=true
+                fi
+              done
+              
+              # Clean up idle Ray clusters (no active jobs for 30 minutes)
+              kubectl get rayclusters --all-namespaces -o json | \
+              jq -r '.items[] | select(.status.state == "ready" and 
+                     (.metadata.creationTimestamp | fromdateiso8601) < (now - 1800)) | 
+                     "\(.metadata.namespace) \(.metadata.name)"' | \
+              while read namespace name; do
+                if [ -n "$namespace" ] && [ -n "$name" ]; then
+                  # Check if cluster has active jobs
+                  active_jobs=$(kubectl get rayjobs -n "$namespace" -o json | \
+                               jq -r --arg cluster "$name" '.items[] | select(.spec.rayClusterSpec.metadata.name == $cluster and .status.jobStatus == "RUNNING") | .metadata.name' | wc -l)
+                  
+                  if [ "$active_jobs" -eq 0 ]; then
+                    echo "Deleting idle Ray cluster: $namespace/$name"
+                    kubectl delete raycluster "$name" -n "$namespace" --ignore-not-found=true
+                  fi
+                fi
+              done
+              
+              echo "Ray cleanup completed"
+            resources:
+              requests:
+                memory: 64Mi
+                cpu: 50m
+              limits:
+                memory: 128Mi
+                cpu: 100m
+
+---
+# CronJob for cleaning up unused PVCs
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: pvc-cleanup
+  namespace: kube-system
+  labels:
+    app: resource-cleanup
+    component: pvc-cleanup
+spec:
+  schedule: "0 2 * * *"  # Run daily at 2 AM
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      template:
+        metadata:
+          labels:
+            app: resource-cleanup
+            component: pvc-cleanup
+        spec:
+          serviceAccountName: resource-cleanup
+          restartPolicy: OnFailure
+          containers:
+          - name: cleanup
+            image: bitnami/kubectl:latest
+            command:
+            - /bin/bash
+            - -c
+            - |
+              set -e
+              echo "Starting PVC cleanup..."
+              
+              # Find PVCs not bound to any pods for more than 24 hours
+              kubectl get pvc --all-namespaces -o json | \
+              jq -r '.items[] | select(.status.phase == "Bound") | 
+                     select((.metadata.creationTimestamp | fromdateiso8601) < (now - 86400)) |
+                     "\(.metadata.namespace) \(.metadata.name)"' | \
+              while read namespace pvc_name; do
+                if [ -n "$namespace" ] && [ -n "$pvc_name" ]; then
+                  # Check if PVC is used by any pod
+                  pods_using_pvc=$(kubectl get pods -n "$namespace" -o json | \
+                                  jq -r --arg pvc "$pvc_name" '.items[] | select(.spec.volumes[]?.persistentVolumeClaim.claimName == $pvc) | .metadata.name' | wc -l)
+                  
+                  if [ "$pods_using_pvc" -eq 0 ]; then
+                    echo "Deleting unused PVC: $namespace/$pvc_name"
+                    kubectl delete pvc "$pvc_name" -n "$namespace" --ignore-not-found=true
+                  fi
+                fi
+              done
+              
+              echo "PVC cleanup completed"
+            resources:
+              requests:
+                memory: 64Mi
+                cpu: 50m
+              limits:
+                memory: 128Mi
+                cpu: 100m
+
+---
+# CronJob for cleaning up completed Kubernetes jobs
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: job-cleanup
+  namespace: kube-system
+  labels:
+    app: resource-cleanup
+    component: job-cleanup
+spec:
+  schedule: "*/10 * * * *"  # Run every 10 minutes
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      template:
+        metadata:
+          labels:
+            app: resource-cleanup
+            component: job-cleanup
+        spec:
+          serviceAccountName: resource-cleanup
+          restartPolicy: OnFailure
+          containers:
+          - name: cleanup
+            image: bitnami/kubectl:latest
+            command:
+            - /bin/bash
+            - -c
+            - |
+              set -e
+              echo "Starting Kubernetes job cleanup..."
+              
+              # Clean up completed jobs older than 30 minutes
+              kubectl get jobs --all-namespaces -o json | \
+              jq -r '.items[] | select(.status.conditions[]?.type == "Complete" and 
+                     (.status.completionTime // now) < (now - 1800)) | 
+                     "\(.metadata.namespace) \(.metadata.name)"' | \
+              while read namespace name; do
+                if [ -n "$namespace" ] && [ -n "$name" ]; then
+                  echo "Deleting completed job: $namespace/$name"
+                  kubectl delete job "$name" -n "$namespace" --ignore-not-found=true
+                fi
+              done
+              
+              # Clean up failed jobs older than 1 hour
+              kubectl get jobs --all-namespaces -o json | \
+              jq -r '.items[] | select(.status.conditions[]?.type == "Failed" and 
+                     (.status.conditions[] | select(.type == "Failed").lastTransitionTime | fromdateiso8601) < (now - 3600)) | 
+                     "\(.metadata.namespace) \(.metadata.name)"' | \
+              while read namespace name; do
+                if [ -n "$namespace" ] && [ -n "$name" ]; then
+                  echo "Deleting failed job: $namespace/$name"
+                  kubectl delete job "$name" -n "$namespace" --ignore-not-found=true
+                fi
+              done
+              
+              echo "Kubernetes job cleanup completed"
+            resources:
+              requests:
+                memory: 64Mi
+                cpu: 50m
+              limits:
+                memory: 128Mi
+                cpu: 100m
+
+---
+# ConfigMap for cleanup configuration
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: resource-cleanup-config
+  namespace: kube-system
+data:
+  spark-retention-hours: "1"
+  ray-retention-hours: "1"
+  failed-job-retention-hours: "2"
+  pvc-retention-hours: "24"
+  job-retention-minutes: "30"
+  cleanup-enabled: "true"
+  dry-run: "false"
+
+---
+# Service Monitor for cleanup job metrics
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: resource-cleanup-metrics
+  namespace: kube-system
+  labels:
+    app: resource-cleanup
+spec:
+  selector:
+    matchLabels:
+      app: resource-cleanup-metrics
+  endpoints:
+  - port: metrics
+    interval: 60s
+    path: /metrics
+
+---
+# Deployment for cleanup metrics exporter
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: resource-cleanup-metrics
+  namespace: kube-system
+  labels:
+    app: resource-cleanup-metrics
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: resource-cleanup-metrics
+  template:
+    metadata:
+      labels:
+        app: resource-cleanup-metrics
+    spec:
+      serviceAccountName: resource-cleanup
+      containers:
+      - name: metrics-exporter
+        image: python:3.9-slim
+        ports:
+        - containerPort: 8080
+          name: metrics
+        command:
+        - /bin/bash
+        - -c
+        - |
+          pip install prometheus_client kubernetes
+          cat > /app/cleanup_metrics.py << 'EOF'
+          import time
+          from prometheus_client import start_http_server, Gauge, Counter
+          from kubernetes import client, config
+          import logging
+
+          logging.basicConfig(level=logging.INFO)
+          logger = logging.getLogger(__name__)
+
+          try:
+              config.load_incluster_config()
+          except:
+              config.load_kube_config()
+
+          v1 = client.CoreV1Api()
+          batch_v1 = client.BatchV1Api()
+
+          # Metrics
+          cleanup_jobs_total = Counter('cleanup_jobs_total', 'Total cleanup jobs executed', ['type', 'status'])
+          resources_cleaned_total = Counter('resources_cleaned_total', 'Total resources cleaned up', ['resource_type', 'namespace'])
+          cleanup_duration_seconds = Gauge('cleanup_duration_seconds', 'Duration of cleanup operations', ['type'])
+
+          def collect_cleanup_metrics():
+              try:
+                  # Count cleanup jobs
+                  jobs = batch_v1.list_namespaced_job(namespace='kube-system', label_selector='app=resource-cleanup')
+                  for job in jobs.items:
+                      component = job.metadata.labels.get('component', 'unknown')
+                      if job.status.succeeded:
+                          cleanup_jobs_total.labels(type=component, status='succeeded').inc()
+                      elif job.status.failed:
+                          cleanup_jobs_total.labels(type=component, status='failed').inc()
+                  
+                  # This is a simplified example - in practice, you'd track actual cleanup operations
+                  logger.info("Cleanup metrics collected")
+                  
+              except Exception as e:
+                  logger.error(f"Error collecting cleanup metrics: {e}")
+
+          def main():
+              start_http_server(8080)
+              logger.info("Cleanup metrics exporter started")
+              
+              while True:
+                  collect_cleanup_metrics()
+                  time.sleep(60)
+
+          if __name__ == '__main__':
+              main()
+          EOF
+          mkdir -p /app && python /app/cleanup_metrics.py
+        resources:
+          requests:
+            memory: 64Mi
+            cpu: 50m
+          limits:
+            memory: 128Mi
+            cpu: 100m
+
+---
+# Service for cleanup metrics
+apiVersion: v1
+kind: Service
+metadata:
+  name: resource-cleanup-metrics
+  namespace: kube-system
+  labels:
+    app: resource-cleanup-metrics
+spec:
+  ports:
+  - name: metrics
+    port: 8080
+    targetPort: 8080
+  selector:
+    app: resource-cleanup-metrics

@@ -1,0 +1,143 @@
+# Test configuration for EMR to EKS migration testing suite
+
+# Global test settings
+global:
+  timeout_seconds: 300
+  retry_attempts: 3
+  parallel_execution: true
+  save_detailed_reports: true
+  
+# AWS Configuration
+aws:
+  region: us-west-2
+  s3_bucket: test-fraud-detection-bucket
+  ecr_registry: 123456789012.dkr.ecr.us-west-2.amazonaws.com
+  
+# EKS Configuration
+eks:
+  cluster_name: data-on-eks-cluster
+  namespace: ml-team-a
+  node_groups:
+    gpu:
+      instance_type: g5.2xlarge
+      min_size: 0
+      max_size: 10
+    cpu:
+      instance_type: m5.xlarge
+      min_size: 2
+      max_size: 20
+
+# EMR Configuration
+emr:
+  virtual_cluster_id: test-emr-cluster
+  execution_role_arn: arn:aws:iam::123456789012:role/EMRContainers-JobExecutionRole
+  
+# Integration Test Configuration
+integration_tests:
+  data_size: 10000
+  test_duration_seconds: 300
+  performance_threshold_seconds: 300
+  expected_features_count: 40
+  min_model_accuracy: 0.80
+  
+# Performance Test Configuration
+performance_tests:
+  data_sizes: [10000, 50000, 100000]
+  benchmark_iterations: 3
+  gpu_speedup_factors:
+    data_processing: 3.5
+    model_training: 5.0
+    inference: 2.0
+  performance_thresholds:
+    data_processing_rows_per_second: 1000
+    model_training_samples_per_second: 10000
+    inference_latency_ms: 100
+    
+# Load Test Configuration
+load_tests:
+  inference_service:
+    base_url: http://localhost:8000
+    max_concurrent_users: 100
+    test_duration_seconds: 300
+    ramp_up_seconds: 60
+    target_rps: 1000
+    batch_sizes: [1, 10, 50, 100]
+    request_timeout_seconds: 30
+  thresholds:
+    success_rate_percent: 95
+    p95_latency_ms: 1000
+    error_rate_percent: 5
+    
+# CI/CD Test Configuration
+cicd_tests:
+  terraform:
+    validate: true
+    plan: true
+    security_scan: true
+    cost_estimation: true
+  docker:
+    build: true
+    security_scan: true
+    push: true
+  kubernetes:
+    staging_deployment: true
+    production_deployment: true
+    rollback_test: true
+  monitoring:
+    prometheus_metrics: true
+    grafana_dashboards: true
+    alerting_rules: true
+    log_aggregation: true
+  security:
+    rbac_policies: true
+    network_policies: true
+    secrets_management: true
+    encryption: true
+    audit_logging: true
+    vulnerability_scanning: true
+    
+# Test Data Configuration
+test_data:
+  synthetic_data:
+    customers_count: 1000
+    terminals_count: 500
+    fraud_rate: 0.05
+    date_range_days: 30
+  sample_transactions:
+    - TX_AMOUNT: 150.0
+      yyyy: 2024
+      mm: 1
+      dd: 15
+      CUSTOMER_ID_index: 123.0
+      TERMINAL_ID_index: 456.0
+    - TX_AMOUNT: 2500.0
+      yyyy: 2024
+      mm: 1
+      dd: 15
+      CUSTOMER_ID_index: 124.0
+      TERMINAL_ID_index: 457.0
+      
+# Reporting Configuration
+reporting:
+  output_formats: [json, html, junit]
+  include_screenshots: false
+  include_logs: true
+  retention_days: 30
+  
+# Environment-specific overrides
+environments:
+  development:
+    load_tests:
+      max_concurrent_users: 10
+      test_duration_seconds: 60
+      target_rps: 50
+  staging:
+    load_tests:
+      max_concurrent_users: 50
+      test_duration_seconds: 180
+      target_rps: 500
+  production:
+    load_tests:
+      max_concurrent_users: 100
+      test_duration_seconds: 300
+      target_rps: 1000

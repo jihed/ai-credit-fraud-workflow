@@ -1,0 +1,339 @@
+# Resource Quotas and Limits for Different Workload Types
+
+---
+# Namespace for ML Team A with resource quotas
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: ml-team-a
+  labels:
+    name: ml-team-a
+    team: ml-team-a
+    cost-center: "ml-workloads"
+    environment: "production"
+
+---
+# Resource Quota for ML Team A
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: ml-team-a-quota
+  namespace: ml-team-a
+spec:
+  hard:
+    # Compute resources
+    requests.cpu: "200"      # 200 CPU cores
+    requests.memory: "800Gi" # 800 GB memory
+    requests.nvidia.com/gpu: "32"  # 32 GPUs
+    limits.cpu: "400"        # 400 CPU cores max
+    limits.memory: "1600Gi"  # 1600 GB memory max
+    limits.nvidia.com/gpu: "64"    # 64 GPUs max
+    
+    # Storage resources
+    requests.storage: "10Ti"  # 10 TB storage
+    persistentvolumeclaims: "100"
+    
+    # Object counts
+    pods: "500"
+    services: "50"
+    secrets: "100"
+    configmaps: "100"
+    
+    # Spark-specific resources
+    count/sparkapplications.sparkoperator.k8s.io: "50"
+    count/scheduledsparkapplications.sparkoperator.k8s.io: "20"
+
+---
+# Limit Range for ML Team A
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: ml-team-a-limits
+  namespace: ml-team-a
+spec:
+  limits:
+  # Default limits for containers
+  - default:
+      cpu: "2"
+      memory: "8Gi"
+      nvidia.com/gpu: "1"
+    defaultRequest:
+      cpu: "500m"
+      memory: "2Gi"
+    type: Container
+  
+  # Limits for pods
+  - max:
+      cpu: "32"
+      memory: "128Gi"
+      nvidia.com/gpu: "8"
+    min:
+      cpu: "100m"
+      memory: "128Mi"
+    type: Pod
+  
+  # Limits for PVCs
+  - max:
+      storage: "1Ti"
+    min:
+      storage: "1Gi"
+    type: PersistentVolumeClaim
+
+---
+# Network Policy for ML Team A (cost optimization through traffic control)
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: ml-team-a-network-policy
+  namespace: ml-team-a
+spec:
+  podSelector: {}
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  # Allow ingress from same namespace
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          name: ml-team-a
+  # Allow ingress from monitoring namespace
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          name: kube-prometheus-stack
+  # Allow ingress from system namespaces
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          name: kube-system
+  egress:
+  # Allow egress to same namespace
+  - to:
+    - namespaceSelector:
+        matchLabels:
+          name: ml-team-a
+  # Allow egress to system namespaces
+  - to:
+    - namespaceSelector:
+        matchLabels:
+          name: kube-system
+  # Allow egress to DNS
+  - to: []
+    ports:
+    - protocol: UDP
+      port: 53
+  # Allow egress to AWS services (S3, ECR, etc.)
+  - to: []
+    ports:
+    - protocol: TCP
+      port: 443
+    - protocol: TCP
+      port: 80
+
+---
+# Namespace for ML Team B with resource quotas
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: ml-team-b
+  labels:
+    name: ml-team-b
+    team: ml-team-b
+    cost-center: "ml-workloads"
+    environment: "production"
+
+---
+# Resource Quota for ML Team B
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: ml-team-b-quota
+  namespace: ml-team-b
+spec:
+  hard:
+    # Compute resources (smaller allocation than team A)
+    requests.cpu: "100"      # 100 CPU cores
+    requests.memory: "400Gi" # 400 GB memory
+    requests.nvidia.com/gpu: "16"  # 16 GPUs
+    limits.cpu: "200"        # 200 CPU cores max
+    limits.memory: "800Gi"   # 800 GB memory max
+    limits.nvidia.com/gpu: "32"    # 32 GPUs max
+    
+    # Storage resources
+    requests.storage: "5Ti"   # 5 TB storage
+    persistentvolumeclaims: "50"
+    
+    # Object counts
+    pods: "250"
+    services: "25"
+    secrets: "50"
+    configmaps: "50"
+    
+    # Spark-specific resources
+    count/sparkapplications.sparkoperator.k8s.io: "25"
+    count/scheduledsparkapplications.sparkoperator.k8s.io: "10"
+
+---
+# Limit Range for ML Team B
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: ml-team-b-limits
+  namespace: ml-team-b
+spec:
+  limits:
+  # Default limits for containers
+  - default:
+      cpu: "1"
+      memory: "4Gi"
+      nvidia.com/gpu: "1"
+    defaultRequest:
+      cpu: "250m"
+      memory: "1Gi"
+    type: Container
+  
+  # Limits for pods
+  - max:
+      cpu: "16"
+      memory: "64Gi"
+      nvidia.com/gpu: "4"
+    min:
+      cpu: "100m"
+      memory: "128Mi"
+    type: Pod
+  
+  # Limits for PVCs
+  - max:
+      storage: "500Gi"
+    min:
+      storage: "1Gi"
+    type: PersistentVolumeClaim
+
+---
+# Development namespace with strict limits
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: ml-development
+  labels:
+    name: ml-development
+    team: development
+    cost-center: "development"
+    environment: "development"
+
+---
+# Resource Quota for Development
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: ml-development-quota
+  namespace: ml-development
+spec:
+  hard:
+    # Limited compute resources for development
+    requests.cpu: "50"       # 50 CPU cores
+    requests.memory: "200Gi" # 200 GB memory
+    requests.nvidia.com/gpu: "8"   # 8 GPUs
+    limits.cpu: "100"        # 100 CPU cores max
+    limits.memory: "400Gi"   # 400 GB memory max
+    limits.nvidia.com/gpu: "16"    # 16 GPUs max
+    
+    # Storage resources
+    requests.storage: "2Ti"   # 2 TB storage
+    persistentvolumeclaims: "25"
+    
+    # Object counts
+    pods: "100"
+    services: "10"
+    secrets: "25"
+    configmaps: "25"
+
+---
+# Limit Range for Development
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: ml-development-limits
+  namespace: ml-development
+spec:
+  limits:
+  # Default limits for containers (smaller for dev)
+  - default:
+      cpu: "500m"
+      memory: "2Gi"
+      nvidia.com/gpu: "1"
+    defaultRequest:
+      cpu: "100m"
+      memory: "512Mi"
+    type: Container
+  
+  # Limits for pods
+  - max:
+      cpu: "8"
+      memory: "32Gi"
+      nvidia.com/gpu: "2"
+    min:
+      cpu: "50m"
+      memory: "64Mi"
+    type: Pod
+  
+  # Limits for PVCs
+  - max:
+      storage: "100Gi"
+    min:
+      storage: "1Gi"
+    type: PersistentVolumeClaim
+
+---
+# Priority Classes for workload prioritization
+apiVersion: scheduling.k8s.io/v1
+kind: PriorityClass
+metadata:
+  name: high-priority-ml
+value: 1000
+globalDefault: false
+description: "High priority class for critical ML workloads"
+
+---
+apiVersion: scheduling.k8s.io/v1
+kind: PriorityClass
+metadata:
+  name: medium-priority-ml
+value: 500
+globalDefault: false
+description: "Medium priority class for standard ML workloads"
+
+---
+apiVersion: scheduling.k8s.io/v1
+kind: PriorityClass
+metadata:
+  name: low-priority-ml
+value: 100
+globalDefault: false
+description: "Low priority class for development and experimental workloads"
+
+---
+# Pod Disruption Budget for critical workloads
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: ml-team-a-pdb
+  namespace: ml-team-a
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      priority: "high"
+
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: ml-team-b-pdb
+  namespace: ml-team-b
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      priority: "medium"

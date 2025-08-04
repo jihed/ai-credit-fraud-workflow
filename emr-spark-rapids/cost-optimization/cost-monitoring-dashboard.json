@@ -1,0 +1,305 @@
+{
+  "dashboard": {
+    "id": null,
+    "title": "EMR on EKS Cost Optimization Dashboard",
+    "tags": ["cost", "optimization", "emr", "eks"],
+    "style": "dark",
+    "timezone": "browser",
+    "refresh": "30s",
+    "time": {
+      "from": "now-1h",
+      "to": "now"
+    },
+    "panels": [
+      {
+        "id": 1,
+        "title": "Cluster Cost Overview",
+        "type": "stat",
+        "targets": [
+          {
+            "expr": "sum(kube_node_info) * 0.096",
+            "legendFormat": "Estimated Hourly Cost ($)"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "currencyUSD",
+            "color": {
+              "mode": "thresholds"
+            },
+            "thresholds": {
+              "steps": [
+                {"color": "green", "value": null},
+                {"color": "yellow", "value": 50},
+                {"color": "red", "value": 100}
+              ]
+            }
+          }
+        },
+        "gridPos": {"h": 8, "w": 6, "x": 0, "y": 0}
+      },
+      {
+        "id": 2,
+        "title": "Node Utilization by Type",
+        "type": "piechart",
+        "targets": [
+          {
+            "expr": "count by (node_type) (kube_node_labels{label_NodeGroupType!=\"\"})",
+            "legendFormat": "{{node_type}}"
+          }
+        ],
+        "gridPos": {"h": 8, "w": 6, "x": 6, "y": 0}
+      },
+      {
+        "id": 3,
+        "title": "GPU Utilization",
+        "type": "gauge",
+        "targets": [
+          {
+            "expr": "avg(DCGM_FI_DEV_GPU_UTIL)",
+            "legendFormat": "GPU Utilization %"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "percent",
+            "min": 0,
+            "max": 100,
+            "thresholds": {
+              "steps": [
+                {"color": "red", "value": 0},
+                {"color": "yellow", "value": 30},
+                {"color": "green", "value": 70}
+              ]
+            }
+          }
+        },
+        "gridPos": {"h": 8, "w": 6, "x": 12, "y": 0}
+      },
+      {
+        "id": 4,
+        "title": "Spot vs On-Demand Instances",
+        "type": "stat",
+        "targets": [
+          {
+            "expr": "count(kube_node_labels{label_karpenter_sh_capacity_type=\"spot\"})",
+            "legendFormat": "Spot Instances"
+          },
+          {
+            "expr": "count(kube_node_labels{label_karpenter_sh_capacity_type=\"on-demand\"})",
+            "legendFormat": "On-Demand Instances"
+          }
+        ],
+        "gridPos": {"h": 8, "w": 6, "x": 18, "y": 0}
+      },
+      {
+        "id": 5,
+        "title": "Resource Requests vs Limits by Namespace",
+        "type": "bargauge",
+        "targets": [
+          {
+            "expr": "sum by (namespace) (kube_pod_container_resource_requests{resource=\"cpu\"})",
+            "legendFormat": "CPU Requests - {{namespace}}"
+          },
+          {
+            "expr": "sum by (namespace) (kube_pod_container_resource_limits{resource=\"cpu\"})",
+            "legendFormat": "CPU Limits - {{namespace}}"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "short"
+          }
+        },
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 8}
+      },
+      {
+        "id": 6,
+        "title": "Memory Utilization by Namespace",
+        "type": "timeseries",
+        "targets": [
+          {
+            "expr": "sum by (namespace) (container_memory_usage_bytes{namespace=~\"ml-.*\"}) / 1024 / 1024 / 1024",
+            "legendFormat": "{{namespace}}"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "decgbytes"
+          }
+        },
+        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 8}
+      },
+      {
+        "id": 7,
+        "title": "Spark Job Cost Analysis",
+        "type": "table",
+        "targets": [
+          {
+            "expr": "spark_job_duration_seconds * on(namespace) group_left() (sum by (namespace) (kube_pod_container_resource_requests{resource=\"cpu\"}) * 0.048)",
+            "legendFormat": "Job Cost Estimate",
+            "format": "table"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "currencyUSD"
+          }
+        },
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 16}
+      },
+      {
+        "id": 8,
+        "title": "Karpenter Node Scaling Events",
+        "type": "timeseries",
+        "targets": [
+          {
+            "expr": "increase(karpenter_nodes_created_total[5m])",
+            "legendFormat": "Nodes Created"
+          },
+          {
+            "expr": "increase(karpenter_nodes_terminated_total[5m])",
+            "legendFormat": "Nodes Terminated"
+          }
+        ],
+        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 16}
+      },
+      {
+        "id": 9,
+        "title": "Resource Waste Detection",
+        "type": "timeseries",
+        "targets": [
+          {
+            "expr": "(sum by (namespace) (kube_pod_container_resource_requests{resource=\"cpu\"}) - sum by (namespace) (rate(container_cpu_usage_seconds_total[5m]))) / sum by (namespace) (kube_pod_container_resource_requests{resource=\"cpu\"}) * 100",
+            "legendFormat": "CPU Waste % - {{namespace}}"
+          },
+          {
+            "expr": "(sum by (namespace) (kube_pod_container_resource_requests{resource=\"memory\"}) - sum by (namespace) (container_memory_usage_bytes)) / sum by (namespace) (kube_pod_container_resource_requests{resource=\"memory\"}) * 100",
+            "legendFormat": "Memory Waste % - {{namespace}}"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "percent",
+            "thresholds": {
+              "steps": [
+                {"color": "green", "value": null},
+                {"color": "yellow", "value": 20},
+                {"color": "red", "value": 50}
+              ]
+            }
+          }
+        },
+        "gridPos": {"h": 8, "w": 24, "x": 0, "y": 24}
+      },
+      {
+        "id": 10,
+        "title": "Spot Instance Interruptions",
+        "type": "stat",
+        "targets": [
+          {
+            "expr": "increase(aws_node_termination_handler_actions_total{action=\"cordon\"}[1h])",
+            "legendFormat": "Spot Interruptions (1h)"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "color": {
+              "mode": "thresholds"
+            },
+            "thresholds": {
+              "steps": [
+                {"color": "green", "value": null},
+                {"color": "yellow", "value": 1},
+                {"color": "red", "value": 5}
+              ]
+            }
+          }
+        },
+        "gridPos": {"h": 8, "w": 6, "x": 0, "y": 32}
+      },
+      {
+        "id": 11,
+        "title": "Cost per ML Job",
+        "type": "timeseries",
+        "targets": [
+          {
+            "expr": "spark_job_duration_seconds / 3600 * on(namespace) group_left() (sum by (namespace) (kube_node_info{node=~\".*gpu.*\"}) * 2.448 + sum by (namespace) (kube_node_info{node!~\".*gpu.*\"}) * 0.192)",
+            "legendFormat": "Job Cost - {{job_name}}"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "currencyUSD"
+          }
+        },
+        "gridPos": {"h": 8, "w": 18, "x": 6, "y": 32}
+      },
+      {
+        "id": 12,
+        "title": "Resource Quota Utilization",
+        "type": "bargauge",
+        "targets": [
+          {
+            "expr": "kube_resourcequota{resource=\"requests.cpu\", type=\"used\"} / kube_resourcequota{resource=\"requests.cpu\", type=\"hard\"} * 100",
+            "legendFormat": "CPU Quota - {{namespace}}"
+          },
+          {
+            "expr": "kube_resourcequota{resource=\"requests.memory\", type=\"used\"} / kube_resourcequota{resource=\"requests.memory\", type=\"hard\"} * 100",
+            "legendFormat": "Memory Quota - {{namespace}}"
+          },
+          {
+            "expr": "kube_resourcequota{resource=\"requests.nvidia.com/gpu\", type=\"used\"} / kube_resourcequota{resource=\"requests.nvidia.com/gpu\", type=\"hard\"} * 100",
+            "legendFormat": "GPU Quota - {{namespace}}"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "percent",
+            "min": 0,
+            "max": 100,
+            "thresholds": {
+              "steps": [
+                {"color": "green", "value": null},
+                {"color": "yellow", "value": 70},
+                {"color": "red", "value": 90}
+              ]
+            }
+          }
+        },
+        "gridPos": {"h": 8, "w": 24, "x": 0, "y": 40}
+      }
+    ],
+    "templating": {
+      "list": [
+        {
+          "name": "namespace",
+          "type": "query",
+          "query": "label_values(kube_namespace_labels, namespace)",
+          "refresh": 1,
+          "includeAll": true,
+          "multi": true
+        },
+        {
+          "name": "node_type",
+          "type": "query",
+          "query": "label_values(kube_node_labels, label_NodeGroupType)",
+          "refresh": 1,
+          "includeAll": true,
+          "multi": true
+        }
+      ]
+    },
+    "annotations": {
+      "list": [
+        {
+          "name": "Spot Interruptions",
+          "datasource": "Prometheus",
+          "expr": "increase(aws_node_termination_handler_actions_total[1m]) > 0",
+          "titleFormat": "Spot Instance Interrupted",
+          "textFormat": "Node {{instance}} was interrupted"
+        }
+      ]
+    }
+  }
+}

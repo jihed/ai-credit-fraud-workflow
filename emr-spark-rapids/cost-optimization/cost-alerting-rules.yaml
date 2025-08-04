@@ -1,0 +1,214 @@
+# Cost Optimization Alerting Rules
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: cost-optimization-alerts
+  namespace: kube-prometheus-stack
+  labels:
+    app: kube-prometheus-stack
+    release: kube-prometheus-stack
+spec:
+  groups:
+  - name: cost-optimization
+    interval: 30s
+    rules:
+    
+    # High cluster cost alert
+    - alert: HighClusterCost
+      expr: sum(kube_node_info) * 0.096 > 100
+      for: 5m
+      labels:
+        severity: warning
+        category: cost
+      annotations:
+        summary: "High cluster cost detected"
+        description: "Cluster hourly cost is ${{ $value | printf \"%.2f\" }}, exceeding $100/hour threshold"
+        runbook_url: "https://docs.company.com/runbooks/cost-optimization"
+    
+    # Resource waste detection
+    - alert: HighResourceWaste
+      expr: |
+        (
+          sum by (namespace) (kube_pod_container_resource_requests{resource="cpu"}) - 
+          sum by (namespace) (rate(container_cpu_usage_seconds_total[5m]))
+        ) / sum by (namespace) (kube_pod_container_resource_requests{resource="cpu"}) * 100 > 50
+      for: 10m
+      labels:
+        severity: warning
+        category: waste
+      annotations:
+        summary: "High CPU resource waste in namespace {{ $labels.namespace }}"
+        description: "CPU waste is {{ $value | printf \"%.1f\" }}% in namespace {{ $labels.namespace }}"
+        runbook_url: "https://docs.company.com/runbooks/resource-optimization"
+    
+    - alert: HighMemoryWaste
+      expr: |
+        (
+          sum by (namespace) (kube_pod_container_resource_requests{resource="memory"}) - 
+          sum by (namespace) (container_memory_usage_bytes)
+        ) / sum by (namespace) (kube_pod_container_resource_requests{resource="memory"}) * 100 > 50
+      for: 10m
+      labels:
+        severity: warning
+        category: waste
+      annotations:
+        summary: "High memory resource waste in namespace {{ $labels.namespace }}"
+        description: "Memory waste is {{ $value | printf \"%.1f\" }}% in namespace {{ $labels.namespace }}"
+        runbook_url: "https://docs.company.com/runbooks/resource-optimization"
+    
+    # GPU utilization alerts
+    - alert: LowGPUUtilization
+      expr: avg(DCGM_FI_DEV_GPU_UTIL) < 30
+      for: 15m
+      labels:
+        severity: warning
+        category: gpu-waste
+      annotations:
+        summary: "Low GPU utilization detected"
+        description: "Average GPU utilization is {{ $value | printf \"%.1f\" }}%, below 30% threshold"
+        runbook_url: "https://docs.company.com/runbooks/gpu-optimization"
+    
+    - alert: IdleGPUNodes
+      expr: |
+        count(kube_node_labels{label_node_kubernetes_io_instance_type=~"g5.*"}) - 
+        count(kube_pod_info{node=~".*gpu.*"}) > 2
+      for: 10m
+      labels:
+        severity: warning
+        category: gpu-waste
+      annotations:
+        summary: "Idle GPU nodes detected"
+        description: "{{ $value }} GPU nodes are idle and could be terminated"
+        runbook_url: "https://docs.company.com/runbooks/gpu-optimization"
+    
+    # Spot instance interruption rate
+    - alert: HighSpotInterruptionRate
+      expr: increase(aws_node_termination_handler_actions_total{action="cordon"}[1h]) > 5
+      for: 0m
+      labels:
+        severity: warning
+        category: spot-interruption
+      annotations:
+        summary: "High spot instance interruption rate"
+        description: "{{ $value }} spot instances were interrupted in the last hour"
+        runbook_url: "https://docs.company.com/runbooks/spot-optimization"
+    
+    # Resource quota utilization
+    - alert: ResourceQuotaNearLimit
+      expr: |
+        kube_resourcequota{type="used"} / kube_resourcequota{type="hard"} * 100 > 85
+      for: 5m
+      labels:
+        severity: warning
+        category: quota
+      annotations:
+        summary: "Resource quota near limit in {{ $labels.namespace }}"
+        description: "{{ $labels.resource }} quota is {{ $value | printf \"%.1f\" }}% utilized in namespace {{ $labels.namespace }}"
+        runbook_url: "https://docs.company.com/runbooks/quota-management"
+    
+    # Long-running jobs cost alert
+    - alert: ExpensiveLongRunningJob
+      expr: |
+        spark_job_duration_seconds > 3600 and 
+        spark_job_duration_seconds / 3600 * 2.448 > 50
+      for: 0m
+      labels:
+        severity: warning
+        category: job-cost
+      annotations:
+        summary: "Expensive long-running job detected"
+        description: "Job {{ $labels.job_name }} has been running for {{ $value | humanizeDuration }} and costs over $50"
+        runbook_url: "https://docs.company.com/runbooks/job-optimization"
+    
+    # Karpenter node provisioning issues
+    - alert: KarpenterProvisioningErrors
+      expr: increase(karpenter_pods_startup_duration_seconds_count[5m]) == 0 and increase(karpenter_nodes_created_total[5m]) == 0 and kube_pod_status_phase{phase="Pending"} > 0
+      for: 5m
+      labels:
+        severity: warning
+        category: karpenter
+      annotations:
+        summary: "Karpenter provisioning issues detected"
+        description: "Karpenter may be having issues provisioning nodes for pending pods"
+        runbook_url: "https://docs.company.com/runbooks/karpenter-troubleshooting"
+    
+    # Node provisioning delays
+    - alert: SlowNodeProvisioning
+      expr: karpenter_pods_startup_duration_seconds > 300
+      for: 0m
+      labels:
+        severity: warning
+        category: provisioning
+      annotations:
+        summary: "Slow node provisioning detected"
+        description: "Karpenter node provisioning took {{ $value | humanizeDuration }}, exceeding 5 minute threshold"
+        runbook_url: "https://docs.company.com/runbooks/provisioning-optimization"
+    
+    # Unused persistent volumes
+    - alert: UnusedPersistentVolumes
+      expr: |
+        kube_persistentvolume_info unless on(persistentvolume) 
+        kube_persistentvolumeclaim_info
+      for: 24h
+      labels:
+        severity: info
+        category: storage-waste
+      annotations:
+        summary: "Unused persistent volume detected"
+        description: "PV {{ $labels.persistentvolume }} has been unused for 24 hours"
+        runbook_url: "https://docs.company.com/runbooks/storage-cleanup"
+
+  - name: cost-optimization-recording-rules
+    interval: 30s
+    rules:
+    
+    # Cost calculation recording rules
+    - record: cluster:cost_per_hour
+      expr: |
+        sum(kube_node_info{node=~".*gpu.*"}) * 2.448 + 
+        sum(kube_node_info{node!~".*gpu.*"}) * 0.192
+    
+    - record: namespace:cost_per_hour
+      expr: |
+        sum by (namespace) (
+          kube_pod_info * on(node) group_left() (
+            kube_node_info{node=~".*gpu.*"} * 2.448 + 
+            kube_node_info{node!~".*gpu.*"} * 0.192
+          )
+        ) / sum(kube_node_info)
+    
+    # Resource utilization recording rules
+    - record: namespace:cpu_utilization_percent
+      expr: |
+        sum by (namespace) (rate(container_cpu_usage_seconds_total[5m])) / 
+        sum by (namespace) (kube_pod_container_resource_requests{resource="cpu"}) * 100
+    
+    - record: namespace:memory_utilization_percent
+      expr: |
+        sum by (namespace) (container_memory_usage_bytes) / 
+        sum by (namespace) (kube_pod_container_resource_requests{resource="memory"}) * 100
+    
+    - record: namespace:gpu_utilization_percent
+      expr: |
+        avg by (namespace) (DCGM_FI_DEV_GPU_UTIL)
+    
+    # Waste calculation recording rules
+    - record: namespace:cpu_waste_percent
+      expr: |
+        (
+          sum by (namespace) (kube_pod_container_resource_requests{resource="cpu"}) - 
+          sum by (namespace) (rate(container_cpu_usage_seconds_total[5m]))
+        ) / sum by (namespace) (kube_pod_container_resource_requests{resource="cpu"}) * 100
+    
+    - record: namespace:memory_waste_percent
+      expr: |
+        (
+          sum by (namespace) (kube_pod_container_resource_requests{resource="memory"}) - 
+          sum by (namespace) (container_memory_usage_bytes)
+        ) / sum by (namespace) (kube_pod_container_resource_requests{resource="memory"}) * 100
+    
+    # Spot instance metrics
+    - record: cluster:spot_instance_ratio
+      expr: |
+        count(kube_node_labels{label_karpenter_sh_capacity_type="spot"}) / 
+        count(kube_node_labels{label_karpenter_sh_capacity_type=~"spot|on-demand"}) * 100
