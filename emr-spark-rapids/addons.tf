@@ -1,35 +1,75 @@
 #---------------------------------------------------------------
-# IRSA for EBS CSI Driver
+# EKS Pod Identity for EBS CSI Driver
 #---------------------------------------------------------------
-module "ebs_csi_driver_irsa" {
-  source                = "terraform-aws-modules/iam/aws//modules/iam-role-for-service-accounts-eks"
-  version               = "~> 5.34"
-  role_name_prefix      = format("%s-%s-", local.name, "ebs-csi-driver")
-  attach_ebs_csi_policy = true
-  oidc_providers = {
-    main = {
-      provider_arn               = module.eks.oidc_provider_arn
-      namespace_service_accounts = ["kube-system:ebs-csi-controller-sa"]
-    }
-  }
+resource "aws_iam_role" "ebs_csi_driver_role" {
+  name = format("%s-%s", local.name, "ebs-csi-driver-role")
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Principal = {
+          Service = "pods.eks.amazonaws.com"
+        }
+        Action = [
+          "sts:AssumeRole",
+          "sts:TagSession"
+        ]
+      }
+    ]
+  })
+
   tags = local.tags
 }
 
+resource "aws_iam_role_policy_attachment" "ebs_csi_driver_policy" {
+  policy_arn = "arn:aws:iam::aws:policy/service-role/Amazon_EBS_CSI_DriverPolicy"
+  role       = aws_iam_role.ebs_csi_driver_role.name
+}
+
+resource "aws_eks_pod_identity_association" "ebs_csi_driver" {
+  cluster_name    = module.eks.cluster_name
+  namespace       = "kube-system"
+  service_account = "ebs-csi-controller-sa"
+  role_arn        = aws_iam_role.ebs_csi_driver_role.arn
+}
+
 #---------------------------------------------------------------
-# IRSA for EFS CSI Driver
+# EKS Pod Identity for EFS CSI Driver
 #---------------------------------------------------------------
-module "efs_csi_driver_irsa" {
-  source                = "terraform-aws-modules/iam/aws//modules/iam-role-for-service-accounts-eks"
-  version               = "~> 5.34"
-  role_name_prefix      = format("%s-%s-", local.name, "efs-csi-driver")
-  attach_efs_csi_policy = true
-  oidc_providers = {
-    main = {
-      provider_arn               = module.eks.oidc_provider_arn
-      namespace_service_accounts = ["kube-system:efs-csi-controller-sa"]
-    }
-  }
+resource "aws_iam_role" "efs_csi_driver_role" {
+  name = format("%s-%s", local.name, "efs-csi-driver-role")
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Principal = {
+          Service = "pods.eks.amazonaws.com"
+        }
+        Action = [
+          "sts:AssumeRole",
+          "sts:TagSession"
+        ]
+      }
+    ]
+  })
+
   tags = local.tags
+}
+
+resource "aws_iam_role_policy_attachment" "efs_csi_driver_policy" {
+  policy_arn = "arn:aws:iam::aws:policy/service-role/Amazon_EFS_CSI_DriverPolicy"
+  role       = aws_iam_role.efs_csi_driver_role.name
+}
+
+resource "aws_eks_pod_identity_association" "efs_csi_driver" {
+  cluster_name    = module.eks.cluster_name
+  namespace       = "kube-system"
+  service_account = "efs-csi-controller-sa"
+  role_arn        = aws_iam_role.efs_csi_driver_role.arn
 }
 
 #---------------------------------------------------------------
@@ -49,10 +89,10 @@ module "eks_blueprints_addons" {
   #---------------------------------------
   eks_addons = {
     aws-ebs-csi-driver = {
-      service_account_role_arn = module.ebs_csi_driver_irsa.iam_role_arn
+      # EKS Pod Identity will handle IAM permissions
     }
     aws-efs-csi-driver = {
-      service_account_role_arn = module.efs_csi_driver_irsa.iam_role_arn
+      # EKS Pod Identity will handle IAM permissions
     }
     coredns = {
       preserve = true
@@ -129,7 +169,7 @@ module "eks_blueprints_addons" {
       var.enable_amazon_prometheus ? templatefile("${path.module}/helm-values/kube-prometheus-amp-enable.yaml", {
         region              = local.region
         amp_sa              = local.amp_ingest_service_account
-        amp_irsa            = module.amp_ingest_irsa[0].iam_role_arn
+        amp_irsa            = aws_iam_role.amp_ingest_role[0].arn
         amp_remotewrite_url = "https://aps-workspaces.${local.region}.amazonaws.com/workspaces/${aws_prometheus_workspace.amp[0].id}/api/v1/remote_write"
         amp_url             = "https://aps-workspaces.${local.region}.amazonaws.com/workspaces/${aws_prometheus_workspace.amp[0].id}"
       }) : templatefile("${path.module}/helm-values/kube-prometheus.yaml", {})

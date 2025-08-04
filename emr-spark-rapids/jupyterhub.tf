@@ -73,25 +73,48 @@ resource "aws_ecr_lifecycle_policy" "jupyterhub_rapids" {
   })
 }
 
-# IAM role for JupyterHub service account
-module "jupyterhub_irsa" {
-  source  = "terraform-aws-modules/iam/aws//modules/iam-role-for-service-accounts-eks"
-  version = "~> 5.34"
+#---------------------------------------------------------------
+# EKS Pod Identity for JupyterHub
+#---------------------------------------------------------------
+resource "aws_iam_role" "jupyterhub_role" {
+  name = format("%s-%s", local.name, "jupyterhub-role")
 
-  role_name_prefix = format("%s-%s-", local.name, "jupyterhub")
-
-  role_policy_arns = {
-    policy = aws_iam_policy.jupyterhub_policy.arn
-  }
-
-  oidc_providers = {
-    main = {
-      provider_arn               = module.eks.oidc_provider_arn
-      namespace_service_accounts = ["jupyterhub:jupyterhub-hub", "jupyterhub:jupyterhub-notebook-sa"]
-    }
-  }
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Principal = {
+          Service = "pods.eks.amazonaws.com"
+        }
+        Action = [
+          "sts:AssumeRole",
+          "sts:TagSession"
+        ]
+      }
+    ]
+  })
 
   tags = local.tags
+}
+
+resource "aws_iam_role_policy_attachment" "jupyterhub_policy" {
+  policy_arn = aws_iam_policy.jupyterhub_policy.arn
+  role       = aws_iam_role.jupyterhub_role.name
+}
+
+resource "aws_eks_pod_identity_association" "jupyterhub_hub" {
+  cluster_name    = module.eks.cluster_name
+  namespace       = "jupyterhub"
+  service_account = "jupyterhub-hub"
+  role_arn        = aws_iam_role.jupyterhub_role.arn
+}
+
+resource "aws_eks_pod_identity_association" "jupyterhub_notebook" {
+  cluster_name    = module.eks.cluster_name
+  namespace       = "jupyterhub"
+  service_account = "jupyterhub-notebook-sa"
+  role_arn        = aws_iam_role.jupyterhub_role.arn
 }
 
 # IAM policy for JupyterHub
@@ -169,9 +192,7 @@ resource "kubernetes_service_account" "jupyterhub_notebook" {
   metadata {
     name      = "jupyterhub-notebook-sa"
     namespace = kubernetes_namespace.jupyterhub.metadata[0].name
-    annotations = {
-      "eks.amazonaws.com/role-arn" = module.jupyterhub_irsa.iam_role_arn
-    }
+    # EKS Pod Identity will handle IAM permissions automatically
   }
 
   depends_on = [module.eks]
