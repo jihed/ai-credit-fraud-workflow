@@ -151,6 +151,295 @@ kubectl get daemonset ebs-csi-node -n kube-system
 kubectl get deployment aws-load-balancer-controller -n kube-system
 ```
 
+### 1.5 Fix Missing Components (If Needed)
+
+If any components are missing after Terraform deployment, follow these steps to install them:
+
+#### **Step 1: Check Prerequisites**
+
+```bash
+# Verify required tools are installed
+command -v kubectl >/dev/null 2>&1 || { echo "kubectl is required but not installed"; exit 1; }
+command -v aws >/dev/null 2>&1 || { echo "AWS CLI is required but not installed"; exit 1; }
+command -v helm >/dev/null 2>&1 || { echo "Helm is required but not installed"; exit 1; }
+
+# Install eksctl if not available
+if ! command -v eksctl &> /dev/null; then
+    echo "Installing eksctl..."
+    curl --silent --location "https://github.com/weaveworks/eksctl/releases/latest/download/eksctl_$(uname -s)_amd64.tar.gz" | tar xz -C /tmp
+    sudo mv /tmp/eksctl /usr/local/bin
+    echo "eksctl installed successfully"
+fi
+
+echo "All prerequisites met"
+```
+
+#### **Step 2: Get Cluster Information**
+
+```bash
+# Get cluster information
+CLUSTER_NAME=$(terraform output -raw cluster_name 2>/dev/null || kubectl config current-context | cut -d'/' -f2)
+VPC_ID=$(terraform output -raw vpc_id 2>/dev/null || aws eks describe-cluster --name $CLUSTER_NAME --query "cluster.resourcesVpcConfig.vpcId" --output text)
+AWS_REGION=$(aws configure get region || echo "us-west-2")
+AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+
+echo "Cluster Name: $CLUSTER_NAME"
+echo "VPC ID: $VPC_ID"
+echo "AWS Region: $AWS_REGION"
+echo "AWS Account ID: $AWS_ACCOUNT_ID"
+```
+
+#### **Step 3: Install AWS Load Balancer Controller (If Missing)**
+
+```bash
+# Check if AWS Load Balancer Controller exists
+if ! kubectl get deployment aws-load-balancer-controller -n kube-system &> /dev/null; then
+    echo "Installing AWS Load Balancer Controller..."
+    
+    # Download IAM policy
+    curl -s -O https://raw.githubusercontent.com/kubernetes-sigs/aws-load-balancer-controller/v2.8.1/docs/install/iam_policy.json
+    
+    # Create IAM policy (ignore if already exists)
+    aws iam create-policy \
+        --policy-name AWSLoadBalancerControllerIAMPolicy \
+        --policy-document file://iam_policy.json 2>/dev/null || echo "Policy already exists"
+    
+    # Create service account with IAM role
+    eksctl create iamserviceaccount \
+        --cluster=$CLUSTER_NAME \
+        --namespace=kube-system \
+        --name=aws-load-balancer-controller \
+        --role-name AmazonEKSLoadBalancerControllerRole \
+        --attach-policy-arn=arn:aws:iam::$AWS_ACCOUNT_ID:policy/AWSLoadBalancerControllerIAMPolicy \
+        --approve \
+        --override-existing-serviceaccounts
+    
+    # Add EKS Helm repository
+    helm repo add eks https://aws.github.io/eks-charts
+    helm repo update
+    
+    # Install AWS Load Balancer Controller
+    helm install aws-load-balancer-controller eks/aws-load-balancer-controller \
+        -n kube-system \
+        --set clusterName=$CLUSTER_NAME \
+        --set serviceAccount.create=false \
+        --set serviceAccount.name=aws-load-balancer-controller \
+        --set region=$AWS_REGION \
+        --set vpcId=$VPC_ID
+    
+    # Wait for deployment to be ready
+    kubectl wait --for=condition=available deployment/aws-load-balancer-controller -n kube-system --timeout=300s
+    
+    echo "AWS Load Balancer Controller installed successfully"
+    
+    # Clean up
+    rm -f iam_policy.json
+else
+    echo "AWS Load Balancer Controller already exists"
+fi
+```
+
+#### **Step 4: Install NVIDIA Device Plugin (If Missing)**
+
+```bash
+# Check if NVIDIA Device Plugin exists
+if ! kubectl get daemonset nvidia-device-plugin-daemonset -n kube-system &> /dev/null; then
+    echo "Installing NVIDIA Device Plugin..."
+    
+    # Install NVIDIA Device Plugin
+    kubectl apply -f https://raw.githubusercontent.com/NVIDIA/k8s-device-plugin/v0.15.0/nvidia-device-plugin.yml
+    
+    # Wait for daemonset to be ready
+    kubectl rollout status daemonset/nvidia-device-plugin-daemonset -n kube-system --timeout=300s
+    
+    echo "NVIDIA Device Plugin installed successfully"
+else
+    echo "NVIDIA Device Plugin already exists"
+fi
+```
+
+#### **Step 5: Install Metrics Server (If Missing)**
+
+```bash
+# Check if Metrics Server exists
+if ! kubectl get deployment metrics-server -n kube-system &> /dev/null; then
+    echo "Installing Metrics Server..."
+    
+    # Install Metrics Server
+    kubectl apply -f https://github.com/kubernetes-sigs/metrics-server/releases/latest/download/components.yaml
+    
+    # Wait for deployment to be ready
+    kubectl wait --for=condition=available deployment/metrics-server -n kube-system --timeout=300s
+    
+    echo "Metrics Server installed successfully"
+else
+    echo "Metrics Server already exists"
+fi
+```
+
+#### **Step 6: Verify All Components**
+
+```bash
+# Verify all components are working
+echo "Verifying all components..."
+
+# Define components to check
+declare -A components=(
+    ["kube-system:deployment/aws-load-balancer-controller"]="AWS Load Balancer Controller"
+    ["kube-system:daemonset/nvidia-device-plugin-daemonset"]="NVIDIA Device Plugin"
+    ["kube-system:deployment/metrics-server"]="Metrics Server"
+    ["kube-system:daemonset/ebs-csi-node"]="EBS CSI Driver"
+    ["karpenter:deployment/karpenter"]="Karpenter"
+)
+
+failed_components=()
+
+for component in "${!components[@]}"; do
+    namespace=$(echo $component | cut -d':' -f1)
+    resource=$(echo $component | cut -d':' -f2)
+    name=${components[$component]}
+    
+    if kubectl get $resource -n $namespace &> /dev/null; then
+        echo "✅ $name - OK"
+    else
+        echo "❌ $name - NOT FOUND"
+        failed_components+=("$name")
+    fi
+done
+
+if [[ ${#failed_components[@]} -eq 0 ]]; then
+    echo ""
+    echo "🎉 All components verified successfully!"
+    echo "You can now proceed with the implementation guide."
+else
+    echo ""
+    echo "⚠️  Some components are missing:"
+    for component in "${failed_components[@]}"; do
+        echo "  - $component"
+    done
+    echo ""
+    echo "Please check the Terraform deployment or install missing components manually."
+fi
+```
+
+#### **Complete Installation Script (All-in-One)**
+
+If you prefer to run all the above steps at once, you can copy and paste this complete script:
+
+```bash
+#!/bin/bash
+# Complete Missing Components Installation Script
+
+set -euo pipefail
+
+echo "🚀 Starting missing components installation..."
+
+# Step 1: Check prerequisites
+echo "📋 Checking prerequisites..."
+command -v kubectl >/dev/null 2>&1 || { echo "kubectl is required but not installed"; exit 1; }
+command -v aws >/dev/null 2>&1 || { echo "AWS CLI is required but not installed"; exit 1; }
+command -v helm >/dev/null 2>&1 || { echo "Helm is required but not installed"; exit 1; }
+
+if ! command -v eksctl &> /dev/null; then
+    echo "Installing eksctl..."
+    curl --silent --location "https://github.com/weaveworks/eksctl/releases/latest/download/eksctl_$(uname -s)_amd64.tar.gz" | tar xz -C /tmp
+    sudo mv /tmp/eksctl /usr/local/bin
+fi
+
+# Step 2: Get cluster information
+echo "🔍 Getting cluster information..."
+CLUSTER_NAME=$(terraform output -raw cluster_name 2>/dev/null || kubectl config current-context | cut -d'/' -f2)
+VPC_ID=$(terraform output -raw vpc_id 2>/dev/null || aws eks describe-cluster --name $CLUSTER_NAME --query "cluster.resourcesVpcConfig.vpcId" --output text)
+AWS_REGION=$(aws configure get region || echo "us-west-2")
+AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+
+echo "Cluster: $CLUSTER_NAME | VPC: $VPC_ID | Region: $AWS_REGION"
+
+# Step 3: Install AWS Load Balancer Controller
+echo "🔧 Installing AWS Load Balancer Controller..."
+if ! kubectl get deployment aws-load-balancer-controller -n kube-system &> /dev/null; then
+    curl -s -O https://raw.githubusercontent.com/kubernetes-sigs/aws-load-balancer-controller/v2.8.1/docs/install/iam_policy.json
+    aws iam create-policy --policy-name AWSLoadBalancerControllerIAMPolicy --policy-document file://iam_policy.json 2>/dev/null || true
+    
+    eksctl create iamserviceaccount \
+        --cluster=$CLUSTER_NAME \
+        --namespace=kube-system \
+        --name=aws-load-balancer-controller \
+        --role-name AmazonEKSLoadBalancerControllerRole \
+        --attach-policy-arn=arn:aws:iam::$AWS_ACCOUNT_ID:policy/AWSLoadBalancerControllerIAMPolicy \
+        --approve --override-existing-serviceaccounts
+    
+    helm repo add eks https://aws.github.io/eks-charts && helm repo update
+    helm install aws-load-balancer-controller eks/aws-load-balancer-controller \
+        -n kube-system \
+        --set clusterName=$CLUSTER_NAME \
+        --set serviceAccount.create=false \
+        --set serviceAccount.name=aws-load-balancer-controller \
+        --set region=$AWS_REGION --set vpcId=$VPC_ID
+    
+    kubectl wait --for=condition=available deployment/aws-load-balancer-controller -n kube-system --timeout=300s
+    rm -f iam_policy.json
+    echo "✅ AWS Load Balancer Controller installed"
+else
+    echo "✅ AWS Load Balancer Controller already exists"
+fi
+
+# Step 4: Install NVIDIA Device Plugin
+echo "🎮 Installing NVIDIA Device Plugin..."
+if ! kubectl get daemonset nvidia-device-plugin-daemonset -n kube-system &> /dev/null; then
+    kubectl apply -f https://raw.githubusercontent.com/NVIDIA/k8s-device-plugin/v0.15.0/nvidia-device-plugin.yml
+    kubectl rollout status daemonset/nvidia-device-plugin-daemonset -n kube-system --timeout=300s
+    echo "✅ NVIDIA Device Plugin installed"
+else
+    echo "✅ NVIDIA Device Plugin already exists"
+fi
+
+# Step 5: Install Metrics Server
+echo "📊 Installing Metrics Server..."
+if ! kubectl get deployment metrics-server -n kube-system &> /dev/null; then
+    kubectl apply -f https://github.com/kubernetes-sigs/metrics-server/releases/latest/download/components.yaml
+    kubectl wait --for=condition=available deployment/metrics-server -n kube-system --timeout=300s
+    echo "✅ Metrics Server installed"
+else
+    echo "✅ Metrics Server already exists"
+fi
+
+# Step 6: Verify all components
+echo "🔍 Verifying all components..."
+declare -A components=(
+    ["kube-system:deployment/aws-load-balancer-controller"]="AWS Load Balancer Controller"
+    ["kube-system:daemonset/nvidia-device-plugin-daemonset"]="NVIDIA Device Plugin"
+    ["kube-system:deployment/metrics-server"]="Metrics Server"
+    ["kube-system:daemonset/ebs-csi-node"]="EBS CSI Driver"
+    ["karpenter:deployment/karpenter"]="Karpenter"
+)
+
+failed_components=()
+for component in "${!components[@]}"; do
+    namespace=$(echo $component | cut -d':' -f1)
+    resource=$(echo $component | cut -d':' -f2)
+    name=${components[$component]}
+    
+    if kubectl get $resource -n $namespace &> /dev/null; then
+        echo "✅ $name"
+    else
+        echo "❌ $name - NOT FOUND"
+        failed_components+=("$name")
+    fi
+done
+
+if [[ ${#failed_components[@]} -eq 0 ]]; then
+    echo ""
+    echo "🎉 All components installed and verified successfully!"
+    echo "You can now proceed with the implementation guide."
+else
+    echo ""
+    echo "⚠️  Some components are still missing. Please check the logs above."
+fi
+
+echo "✨ Missing components installation completed!"
+```
+
 ## 🔧 Step 2: Deploy Additional Components
 
 ### 2.1 Deploy Ray Operator
@@ -164,7 +453,7 @@ helm repo update
 helm install kuberay-operator kuberay/kuberay-operator \
   --namespace ray-system \
   --create-namespace \
-  --version 1.0.0
+  --version 1.1.0
 
 # Verify Ray operator
 kubectl get deployment kuberay-operator -n ray-system
@@ -517,7 +806,7 @@ metadata:
   name: fraud-detection-cluster
   namespace: ml-team-a
 spec:
-  rayVersion: '2.9.0'
+  rayVersion: '2.9.3'
   headGroupSpec:
     replicas: 1
     rayStartParams:
@@ -527,7 +816,7 @@ spec:
       spec:
         containers:
         - name: ray-head
-          image: rayproject/ray-ml:2.9.0-gpu
+          image: rayproject/ray-ml:2.9.3-gpu
           ports:
           - containerPort: 6379
             name: gcs
@@ -554,7 +843,7 @@ spec:
       spec:
         containers:
         - name: ray-worker
-          image: rayproject/ray-ml:2.9.0-gpu
+          image: rayproject/ray-ml:2.9.3-gpu
           resources:
             requests:
               cpu: "4"
@@ -586,7 +875,7 @@ kubectl get raycluster fraud-detection-cluster -n ml-team-a
 ### 5.2 Run Model Training Notebook
 
 ```python
-# Cell 1: Connect to Ray cluster
+# Cell 1: Connect to Ray cluster (Ray v2.9.3 with KubeRay v1.1.0)
 import ray
 from ray import tune
 import xgboost as xgb
@@ -597,6 +886,7 @@ from ray.air.config import ScalingConfig
 ray.init(address="ray://fraud-detection-cluster-head-svc.ml-team-a.svc.cluster.local:10001")
 
 print(f"Ray cluster info: {ray.cluster_resources()}")
+print(f"Ray version: {ray.__version__}")
 
 # Cell 2: Load training data
 train_df = cudf.read_parquet(f's3://{S3_BUCKET}/processed-data/customer-features/')
@@ -850,6 +1140,11 @@ cat tests/reports/security_audit_*.json
 - **Better GPU Support**: Improved GPU node provisioning with latest NVIDIA drivers (550+ series)
 - **Instance Metadata Tags**: Enhanced tagging and metadata support for better cost tracking
 
+### Latest ML Framework Versions
+- **KubeRay Operator v1.1.0**: Latest stable version with improved Ray cluster management
+- **Ray v2.9.3**: Latest Ray version with enhanced GPU support and performance improvements
+- **RAPIDS 24.02**: Latest RAPIDS libraries with CUDA 12.0 support
+
 ### Key Configuration Improvements
 ```bash
 # Monitor new Karpenter metrics
@@ -967,7 +1262,33 @@ After completing the setup, you should see these performance improvements:
    kubectl describe raycluster fraud-detection-cluster -n ml-team-a
    ```
 
-4. **S3 Access Issues**
+4. **AWS Load Balancer Controller Missing**
+   ```bash
+   # Check if AWS Load Balancer Controller exists
+   kubectl get deployment aws-load-balancer-controller -n kube-system
+   
+   # If missing, install it manually
+   CLUSTER_NAME=$(terraform output -raw cluster_name)
+   
+   # Install using eksctl (easiest method)
+   eksctl create iamserviceaccount \
+     --cluster=$CLUSTER_NAME \
+     --namespace=kube-system \
+     --name=aws-load-balancer-controller \
+     --role-name AmazonEKSLoadBalancerControllerRole \
+     --attach-policy-arn=arn:aws:iam::$(aws sts get-caller-identity --query Account --output text):policy/AWSLoadBalancerControllerIAMPolicy \
+     --approve
+   
+   # Install using Helm
+   helm repo add eks https://aws.github.io/eks-charts
+   helm install aws-load-balancer-controller eks/aws-load-balancer-controller \
+     -n kube-system \
+     --set clusterName=$CLUSTER_NAME \
+     --set serviceAccount.create=false \
+     --set serviceAccount.name=aws-load-balancer-controller
+   ```
+
+5. **S3 Access Issues**
    ```bash
    # Check IAM roles and policies
    aws iam list-attached-role-policies --role-name <node-group-role>

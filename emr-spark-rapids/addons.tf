@@ -82,6 +82,14 @@ module "eks_blueprints_addons" {
   }
 
   #---------------------------------------
+  # AWS Load Balancer Controller
+  #---------------------------------------
+  enable_aws_load_balancer_controller = true
+  aws_load_balancer_controller = {
+    chart_version = "1.8.1"
+  }
+
+  #---------------------------------------
   # Karpenter Autoscaler for EKS Cluster
   #---------------------------------------
   enable_karpenter                  = true
@@ -268,7 +276,7 @@ module "eks_data_addons" {
   enable_kuberay_operator = true
   kuberay_operator_helm_config = {
     name             = "kuberay-operator"
-    chart_version    = "1.1.1"
+    chart_version    = "1.1.0"
     repository       = "https://ray-project.github.io/kuberay-helm/"
     namespace        = "ray-system"
     create_namespace = true
