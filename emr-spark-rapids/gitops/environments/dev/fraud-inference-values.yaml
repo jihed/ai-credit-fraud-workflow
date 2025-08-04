@@ -1,0 +1,47 @@
+# Development environment values for fraud-inference
+replicaCount: 1
+
+image:
+  repository: fraud-inference
+  tag: "dev-latest"
+  pullPolicy: Always
+
+resources:
+  limits:
+    cpu: 500m
+    memory: 1Gi
+  requests:
+    cpu: 250m
+    memory: 512Mi
+
+autoscaling:
+  enabled: false
+  minReplicas: 1
+  maxReplicas: 3
+
+ingress:
+  enabled: true
+  hosts:
+    - host: fraud-inference-dev.data-on-eks.local
+      paths:
+        - path: /
+          pathType: Prefix
+
+env:
+  - name: MODEL_PATH
+    value: "s3://your-dev-bucket/models/fraud-detection/latest/"
+  - name: AWS_DEFAULT_REGION
+    value: "us-west-2"
+  - name: LOG_LEVEL
+    value: "DEBUG"
+  - name: WORKERS
+    value: "2"
+
+monitoring:
+  enabled: true
+  serviceMonitor:
+    enabled: true
+    interval: 60s
+
+podDisruptionBudget:
+  enabled: false

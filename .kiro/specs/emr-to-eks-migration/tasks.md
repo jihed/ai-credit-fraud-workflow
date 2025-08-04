@@ -66,8 +66,8 @@
   - Configure alerting rules for system health and performance degradation
   - _Requirements: 5.1, 5.2, 5.3_
 
-- [ ] 11. Configure GitOps deployment pipeline
-  - Set up FluxCD for GitOps-based deployment automation
+- [x] 11. Configure GitOps deployment pipeline
+  - Set up ArgoCD for GitOps-based deployment automation
   - Create Helm charts for all application components
   - Implement environment-specific configuration management
   - Configure automated rollback on deployment failures

@@ -1,0 +1,50 @@
+# Staging environment values for fraud-inference
+replicaCount: 2
+
+image:
+  repository: fraud-inference
+  tag: "staging-latest"
+  pullPolicy: IfNotPresent
+
+resources:
+  limits:
+    cpu: 750m
+    memory: 1.5Gi
+  requests:
+    cpu: 375m
+    memory: 768Mi
+
+autoscaling:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 10
+  targetCPUUtilizationPercentage: 70
+  targetMemoryUtilizationPercentage: 80
+
+ingress:
+  enabled: true
+  hosts:
+    - host: fraud-inference-staging.data-on-eks.local
+      paths:
+        - path: /
+          pathType: Prefix
+
+env:
+  - name: MODEL_PATH
+    value: "s3://your-staging-bucket/models/fraud-detection/latest/"
+  - name: AWS_DEFAULT_REGION
+    value: "us-west-2"
+  - name: LOG_LEVEL
+    value: "INFO"
+  - name: WORKERS
+    value: "3"
+
+monitoring:
+  enabled: true
+  serviceMonitor:
+    enabled: true
+    interval: 30s
+
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 1

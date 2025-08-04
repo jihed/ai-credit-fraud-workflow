@@ -1,0 +1,17 @@
+apiVersion: v2
+name: fraud-inference
+description: A Helm chart for Fraud Detection Inference Service
+type: application
+version: 0.1.0
+appVersion: "1.0.0"
+keywords:
+  - fraud-detection
+  - inference
+  - machine-learning
+  - xgboost
+home: https://github.com/your-org/emr-to-eks-migration
+sources:
+  - https://github.com/your-org/emr-to-eks-migration
+maintainers:
+  - name: EMR to EKS Migration Team
+    email: team@yourorg.com

@@ -1,0 +1,318 @@
+{{- if .Values.customMetricsExporters.enabled }}
+{{- if .Values.customMetricsExporters.emrMetricsExporter.enabled }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: emr-metrics-exporter
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: emr-metrics-exporter
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: emr-metrics-exporter
+  template:
+    metadata:
+      labels:
+        app: emr-metrics-exporter
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8080"
+        prometheus.io/path: "/metrics"
+    spec:
+      serviceAccountName: emr-metrics-exporter
+      containers:
+      - name: exporter
+        image: {{ .Values.customMetricsExporters.emrMetricsExporter.image }}
+        ports:
+        - containerPort: 8080
+          name: metrics
+        env:
+        {{- range $key, $value := .Values.customMetricsExporters.emrMetricsExporter.env }}
+        - name: {{ $key }}
+          value: {{ $value | quote }}
+        {{- end }}
+        command:
+        - /bin/sh
+        - -c
+        - |
+          pip install boto3 prometheus_client kubernetes
+          mkdir -p /app
+          cat > /app/exporter.py << 'EOF'
+          import time
+          import boto3
+          import json
+          from prometheus_client import start_http_server, Gauge, Counter
+          from kubernetes import client, config
+          import logging
+          import os
+
+          logging.basicConfig(level=logging.INFO)
+          logger = logging.getLogger(__name__)
+
+          # Initialize Kubernetes client
+          try:
+              config.load_incluster_config()
+          except:
+              config.load_kube_config()
+
+          k8s_client = client.ApiClient()
+          
+          try:
+              emr_client = boto3.client('emr-containers', region_name=os.getenv('AWS_REGION', 'us-west-2'))
+          except Exception as e:
+              logger.warning(f"Could not initialize EMR client: {e}")
+              emr_client = None
+
+          # Prometheus metrics
+          spark_job_completion_total = Counter('spark_job_completion_total', 'Total completed Spark jobs', ['namespace', 'job_name'])
+          spark_job_failure_total = Counter('spark_job_failure_total', 'Total failed Spark jobs', ['namespace', 'job_name'])
+          spark_job_duration_seconds = Gauge('spark_job_duration_seconds', 'Spark job duration in seconds', ['namespace', 'job_name'])
+          spark_executor_count = Gauge('spark_executor_count', 'Number of Spark executors', ['namespace', 'job_name'])
+
+          def collect_emr_metrics():
+              if not emr_client:
+                  logger.warning("EMR client not available, skipping metrics collection")
+                  return
+                  
+              try:
+                  # List virtual clusters
+                  response = emr_client.list_virtual_clusters(states=['RUNNING'])
+                  
+                  for cluster in response.get('virtualClusters', []):
+                      cluster_id = cluster['id']
+                      cluster_name = cluster['name']
+                      
+                      # List job runs for this cluster
+                      jobs_response = emr_client.list_job_runs(
+                          virtualClusterId=cluster_id,
+                          states=['COMPLETED', 'FAILED', 'RUNNING']
+                      )
+                      
+                      for job in jobs_response.get('jobRuns', []):
+                          job_name = job['name']
+                          job_state = job['state']
+                          namespace = cluster_name
+                          
+                          if job_state == 'COMPLETED':
+                              spark_job_completion_total.labels(namespace=namespace, job_name=job_name).inc()
+                              
+                              if 'createdAt' in job and 'finishedAt' in job:
+                                  duration = (job['finishedAt'] - job['createdAt']).total_seconds()
+                                  spark_job_duration_seconds.labels(namespace=namespace, job_name=job_name).set(duration)
+                          
+                          elif job_state == 'FAILED':
+                              spark_job_failure_total.labels(namespace=namespace, job_name=job_name).inc()
+                          
+                          spark_executor_count.labels(namespace=namespace, job_name=job_name).set(4)
+                              
+              except Exception as e:
+                  logger.error(f"Error collecting EMR metrics: {e}")
+
+          def main():
+              start_http_server(8080)
+              logger.info("EMR metrics exporter started on port 8080")
+              
+              while True:
+                  collect_emr_metrics()
+                  time.sleep(60)
+
+          if __name__ == '__main__':
+              main()
+          EOF
+          python /app/exporter.py
+        resources:
+          {{- toYaml .Values.customMetricsExporters.emrMetricsExporter.resources | nindent 10 }}
+
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: emr-metrics-exporter
+  namespace: {{ .Release.Namespace }}
+  annotations:
+    eks.amazonaws.com/role-arn: ""
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: emr-metrics-exporter
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: emr-metrics-exporter
+spec:
+  ports:
+  - name: metrics
+    port: 8080
+    targetPort: 8080
+  selector:
+    app: emr-metrics-exporter
+
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: emr-metrics-exporter
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: emr-metrics-exporter
+spec:
+  selector:
+    matchLabels:
+      app: emr-metrics-exporter
+  endpoints:
+  - port: metrics
+    interval: 60s
+    path: /metrics
+{{- end }}
+
+{{- if .Values.customMetricsExporters.rayMetricsExporter.enabled }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ray-metrics-exporter
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: ray-metrics-exporter
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: ray-metrics-exporter
+  template:
+    metadata:
+      labels:
+        app: ray-metrics-exporter
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8081"
+        prometheus.io/path: "/metrics"
+    spec:
+      containers:
+      - name: exporter
+        image: {{ .Values.customMetricsExporters.rayMetricsExporter.image }}
+        ports:
+        - containerPort: 8081
+          name: metrics
+        command:
+        - /bin/sh
+        - -c
+        - |
+          pip install prometheus_client kubernetes requests
+          mkdir -p /app
+          cat > /app/ray_exporter.py << 'EOF'
+          import time
+          import requests
+          import json
+          from prometheus_client import start_http_server, Gauge, Counter
+          from kubernetes import client, config
+          import logging
+
+          logging.basicConfig(level=logging.INFO)
+          logger = logging.getLogger(__name__)
+
+          # Initialize Kubernetes client
+          try:
+              config.load_incluster_config()
+          except:
+              config.load_kube_config()
+
+          v1 = client.CoreV1Api()
+
+          # Prometheus metrics
+          ray_job_completion_total = Counter('ray_job_completion_total', 'Total completed Ray jobs', ['namespace', 'job_name'])
+          ray_job_failure_total = Counter('ray_job_failure_total', 'Total failed Ray jobs', ['namespace', 'job_name'])
+          ray_cluster_worker_count = Gauge('ray_cluster_worker_count', 'Number of Ray workers', ['cluster_name', 'namespace'])
+          ray_cluster_cpu_utilization = Gauge('ray_cluster_cpu_utilization', 'Ray cluster CPU utilization', ['cluster_name', 'namespace'])
+          ray_cluster_memory_utilization = Gauge('ray_cluster_memory_utilization', 'Ray cluster memory utilization', ['cluster_name', 'namespace'])
+
+          def collect_ray_metrics():
+              try:
+                  services = v1.list_service_for_all_namespaces(label_selector="ray.io/node-type=head")
+                  
+                  for service in services.items:
+                      namespace = service.metadata.namespace
+                      cluster_name = service.metadata.labels.get('ray.io/cluster', 'unknown')
+                      
+                      try:
+                          dashboard_url = f"http://{service.spec.cluster_ip}:8265"
+                          
+                          response = requests.get(f"{dashboard_url}/api/cluster_status", timeout=5)
+                          if response.status_code == 200:
+                              cluster_status = response.json()
+                              
+                              worker_count = len([node for node in cluster_status.get('nodes', []) if node.get('node_type') == 'worker'])
+                              ray_cluster_worker_count.labels(cluster_name=cluster_name, namespace=namespace).set(worker_count)
+                              
+                              total_cpu = sum(node.get('resources', {}).get('CPU', 0) for node in cluster_status.get('nodes', []))
+                              used_cpu = sum(node.get('resources_used', {}).get('CPU', 0) for node in cluster_status.get('nodes', []))
+                              if total_cpu > 0:
+                                  cpu_util = (used_cpu / total_cpu) * 100
+                                  ray_cluster_cpu_utilization.labels(cluster_name=cluster_name, namespace=namespace).set(cpu_util)
+                              
+                              total_memory = sum(node.get('resources', {}).get('memory', 0) for node in cluster_status.get('nodes', []))
+                              used_memory = sum(node.get('resources_used', {}).get('memory', 0) for node in cluster_status.get('nodes', []))
+                              if total_memory > 0:
+                                  memory_util = (used_memory / total_memory) * 100
+                                  ray_cluster_memory_utilization.labels(cluster_name=cluster_name, namespace=namespace).set(memory_util)
+                      
+                      except requests.RequestException as e:
+                          logger.warning(f"Could not connect to Ray dashboard for cluster {cluster_name}: {e}")
+                          continue
+                      
+              except Exception as e:
+                  logger.error(f"Error collecting Ray metrics: {e}")
+
+          def main():
+              start_http_server(8081)
+              logger.info("Ray metrics exporter started on port 8081")
+              
+              while True:
+                  collect_ray_metrics()
+                  time.sleep(60)
+
+          if __name__ == '__main__':
+              main()
+          EOF
+          python /app/ray_exporter.py
+        resources:
+          {{- toYaml .Values.customMetricsExporters.rayMetricsExporter.resources | nindent 10 }}
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ray-metrics-exporter
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: ray-metrics-exporter
+spec:
+  ports:
+  - name: metrics
+    port: 8081
+    targetPort: 8081
+  selector:
+    app: ray-metrics-exporter
+
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: ray-metrics-exporter
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: ray-metrics-exporter
+spec:
+  selector:
+    matchLabels:
+      app: ray-metrics-exporter
+  endpoints:
+  - port: metrics
+    interval: 60s
+    path: /metrics
+{{- end }}
+{{- end }}

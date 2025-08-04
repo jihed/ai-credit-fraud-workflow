@@ -1,0 +1,199 @@
+# Rollback policies for ArgoCD applications
+# This file defines automated rollback configurations for deployment failures
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: rollback-policies
+  namespace: argocd
+  labels:
+    app.kubernetes.io/name: rollback-policies
+    app.kubernetes.io/part-of: emr-to-eks-migration
+data:
+  # Global rollback policy
+  global-policy.yaml: |
+    # Global rollback settings
+    rollback:
+      enabled: true
+      maxRetries: 3
+      backoffDuration: "30s"
+      backoffFactor: 2
+      maxBackoffDuration: "5m"
+      
+    # Health check settings
+    healthCheck:
+      enabled: true
+      timeout: "10m"
+      retryInterval: "30s"
+      
+    # Failure conditions that trigger rollback
+    failureConditions:
+      - type: "HealthStatus"
+        status: "Degraded"
+        duration: "5m"
+      - type: "SyncStatus" 
+        status: "OutOfSync"
+        duration: "10m"
+      - type: "PodReadiness"
+        threshold: 0.5  # 50% of pods must be ready
+        duration: "5m"
+
+  # Application-specific policies
+  fraud-inference-policy.yaml: |
+    application: fraud-inference
+    rollback:
+      enabled: true
+      maxRetries: 5
+      strategy: "immediate"  # immediate, gradual, or manual
+      
+    # Pre-rollback hooks
+    preRollbackHooks:
+      - name: "drain-traffic"
+        command: "kubectl patch service fraud-inference -p '{\"spec\":{\"selector\":{\"version\":\"previous\"}}}'"
+      - name: "wait-for-drain"
+        command: "sleep 30"
+        
+    # Post-rollback hooks  
+    postRollbackHooks:
+      - name: "verify-health"
+        command: "kubectl wait --for=condition=ready pod -l app.kubernetes.io/name=fraud-inference --timeout=300s"
+      - name: "restore-traffic"
+        command: "kubectl patch service fraud-inference -p '{\"spec\":{\"selector\":{\"app.kubernetes.io/name\":\"fraud-inference\"}}}'"
+        
+    # Notification settings
+    notifications:
+      enabled: true
+      channels:
+        - slack
+        - email
+      recipients:
+        - "#ml-engineering"
+        - "oncall@yourorg.com"
+
+  monitoring-stack-policy.yaml: |
+    application: monitoring-stack
+    rollback:
+      enabled: true
+      maxRetries: 3
+      strategy: "gradual"
+      
+    # Critical components that must be healthy
+    criticalComponents:
+      - "prometheus"
+      - "grafana"
+      - "alertmanager"
+      
+    # Rollback triggers specific to monitoring
+    triggers:
+      - type: "PrometheusTargetsDown"
+        threshold: 0.8  # 80% of targets must be up
+        duration: "3m"
+      - type: "GrafanaDashboardsUnavailable"
+        duration: "2m"
+      - type: "AlertmanagerDown"
+        duration: "1m"
+        
+    notifications:
+      enabled: true
+      channels:
+        - slack
+      recipients:
+        - "#platform-engineering"
+
+---
+# ArgoCD Notification Configuration for Rollbacks
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: argocd-notifications-cm
+  namespace: argocd
+  labels:
+    app.kubernetes.io/name: argocd-notifications
+    app.kubernetes.io/part-of: argocd
+data:
+  # Notification templates
+  template.rollback-started: |
+    message: |
+      🔄 **Rollback Started**
+      
+      Application: {{.app.metadata.name}}
+      Environment: {{.app.metadata.labels.environment}}
+      Reason: {{.app.status.operationState.message}}
+      
+      Previous Version: {{.app.status.history[1].revision}}
+      Failed Version: {{.app.status.history[0].revision}}
+      
+      ArgoCD: {{.context.argocdUrl}}/applications/{{.app.metadata.name}}
+
+  template.rollback-completed: |
+    message: |
+      ✅ **Rollback Completed Successfully**
+      
+      Application: {{.app.metadata.name}}
+      Environment: {{.app.metadata.labels.environment}}
+      Rolled back to: {{.app.status.sync.revision}}
+      
+      Health Status: {{.app.status.health.status}}
+      Sync Status: {{.app.status.sync.status}}
+      
+      ArgoCD: {{.context.argocdUrl}}/applications/{{.app.metadata.name}}
+
+  template.rollback-failed: |
+    message: |
+      ❌ **Rollback Failed**
+      
+      Application: {{.app.metadata.name}}
+      Environment: {{.app.metadata.labels.environment}}
+      Error: {{.app.status.operationState.message}}
+      
+      **Manual intervention required!**
+      
+      ArgoCD: {{.context.argocdUrl}}/applications/{{.app.metadata.name}}
+
+  # Notification triggers
+  trigger.on-rollback-started: |
+    - when: app.status.operationState.phase in ['Running'] and app.status.operationState.operation.sync.revision != app.status.sync.revision
+      send: [rollback-started]
+
+  trigger.on-rollback-completed: |
+    - when: app.status.operationState.phase in ['Succeeded'] and app.status.operationState.operation.sync.revision != app.status.sync.revision
+      send: [rollback-completed]
+
+  trigger.on-rollback-failed: |
+    - when: app.status.operationState.phase in ['Failed', 'Error'] and app.status.operationState.operation.sync.revision != app.status.sync.revision
+      send: [rollback-failed]
+
+  # Service configuration (example for Slack)
+  service.slack: |
+    token: $slack-token
+    
+  # Subscription configuration
+  subscriptions: |
+    - recipients:
+      - slack:#ml-engineering
+      triggers:
+      - on-rollback-started
+      - on-rollback-completed  
+      - on-rollback-failed
+      selector: app.metadata.labels.team == 'ml-engineering'
+      
+    - recipients:
+      - slack:#platform-engineering
+      triggers:
+      - on-rollback-started
+      - on-rollback-completed
+      - on-rollback-failed
+      selector: app.metadata.labels.team == 'platform-engineering'
+
+---
+# Secret for notification services (example)
+apiVersion: v1
+kind: Secret
+metadata:
+  name: argocd-notifications-secret
+  namespace: argocd
+type: Opaque
+stringData:
+  slack-token: "xoxb-your-slack-bot-token"
+  email-username: "notifications@yourorg.com"
+  email-password: "your-email-password"
