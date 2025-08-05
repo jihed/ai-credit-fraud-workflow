@@ -1,62 +1,143 @@
-
-# KubeCost WebUI -> kubectl port-forward --namespace kubecost deployment/kubecost-cost-analyzer 9090
+# Kubecost Configuration for EMR to EKS Migration Cost Monitoring
 
 global:
-  # pricingCsv:
-  #   enabled: false
-  #   location:
-  #     provider: "AWS"
-  #     region: "us-east-1"
-  #     URI: s3://kc-csv-test/pricing_schema.csv # a valid file URI
-  #     csvAccessCredentials: pricing-schema-access-secret
-
-  # This Prometheus setup is reusing the existing Prometheus deployment
-  # Check for more docs under https://guide.kubecost.com/hc/en-us/articles/4407595941015
   prometheus:
-    fqdn: http://kube-prometheus-stack-prometheus.kube-prometheus-stack.svc:9090
     enabled: false
-
-# If you have node-exporter and/or KSM running on your cluster, follow this step to disable the Kubecost included versions.
-prometheus:
-  nodeExporter:
-    enabled: false
-  serviceAccounts:
-    nodeExporter:
-      create: false
-  kubeStateMetrics:
-    enabled: false
-
-#imageVersion: prod-1.96.0 # commented to use the latest
+    fqdn: http://kube-prometheus-stack-prometheus.kube-prometheus-stack.svc.cluster.local:9090
 
 kubecostFrontend:
-  image: public.ecr.aws/kubecost/frontend
+  image: gcr.io/kubecost1/frontend
+  imagePullPolicy: Always
   resources:
     requests:
-      cpu: "200m"
-      memory: "512Mi"
-
-kubecostMetrics:
-  emitPodAnnotations: true
-  emitNamespaceAnnotations: true
+      cpu: 10m
+      memory: 55Mi
+    limits:
+      cpu: 100m
+      memory: 256Mi
 
 kubecostModel:
-  image: public.ecr.aws/kubecost/cost-model
+  image: gcr.io/kubecost1/cost-model
+  imagePullPolicy: Always
   resources:
     requests:
-      cpu: "500m"
-      memory: "512Mi"
+      cpu: 200m
+      memory: 55Mi
+    limits:
+      cpu: 800m
+      memory: 256Mi
 
-# Set this to false if you're bringing your own service account.
-#serviceAccount:
-#  create: false
-#  name: kubecost-cost-analyzer
-#  annotations:
-#    eks.amazonaws.com/role-arn: <iam-role-arn>
+  # AWS-specific configuration
+  etlBucketConfigSecret: ""
+  etlCloudAsset: true
+  
+  # Cost allocation configuration
+  costAllocationConfig:
+    # Enable GPU cost allocation
+    gpuCostAllocation: true
+    # Enable spot instance cost tracking
+    spotInstanceCostAllocation: true
+    # Custom pricing for EMR comparison
+    customPricing:
+      enabled: true
+      provider: "AWS"
+      region: "${region}"
+      
+  # EMR to EKS migration specific metrics
+  customMetrics:
+    enabled: true
+    emrMigrationMetrics:
+      - name: "emr_cluster_cost_per_hour"
+        description: "Historical EMR cluster cost per hour"
+        value: 2.50  # Example value - adjust based on your EMR costs
+      - name: "eks_cluster_cost_per_hour"
+        description: "Current EKS cluster cost per hour"
+        query: "sum(rate(container_cpu_usage_seconds_total[1h])) * 0.0464"  # Example calculation
 
-# Define persistence volume for cost-analyzer
+networkCosts:
+  enabled: true
+  podMonitor:
+    enabled: true
+
+serviceMonitor:
+  enabled: true
+  additionalLabels:
+    app: kubecost
+
+prometheusRule:
+  enabled: true
+  additionalLabels:
+    app: kubecost
+
+ingress:
+  enabled: false
+
 persistentVolume:
+  enabled: true
   size: 32Gi
-  dbSize: 32.0Gi
-  enabled: true # Note that setting this to false means configurations will be wiped out on pod restart.
-  storageClass: gp2
-  # existingClaim: kubecost-cost-analyzer # a claim in the same namespace as kubecost
+  storageClass: gp3
+  accessMode: ReadWriteOnce
+
+nodeSelector:
+  workload-type: cpu
+
+tolerations: []
+
+affinity: {}
+
+# Grafana dashboard integration
+grafana:
+  proxy: false
+  domainName: localhost:3000
+  scheme: http
+
+# Reporting configuration
+reporting:
+  productAnalytics: false
+  errorReporting: false
+  valuesReporting: false
+  logCollection: false
+
+# Cluster controller for multi-cluster cost aggregation
+clusterController:
+  enabled: false
+
+# Cost-analyzer specific configuration
+costAnalyzer:
+  # Enable detailed cost breakdown
+  detailedCostBreakdown: true
+  
+  # EMR comparison dashboard
+  customDashboards:
+    emrComparison:
+      enabled: true
+      title: "EMR vs EKS Cost Comparison"
+      queries:
+        - name: "emr_monthly_cost"
+          query: "emr_cluster_cost_per_hour * 24 * 30"
+        - name: "eks_monthly_cost"
+          query: "sum(kube_pod_container_resource_requests{resource='cpu'}) * 0.0464 * 24 * 30"
+        - name: "cost_savings"
+          query: "emr_monthly_cost - eks_monthly_cost"
+
+# Alerts for cost anomalies
+alerts:
+  enabled: true
+  rules:
+    - alert: HighEKSCost
+      expr: sum(rate(container_cpu_usage_seconds_total[1h])) * 0.0464 > 5.0
+      for: 10m
+      labels:
+        severity: warning
+      annotations:
+        summary: "EKS cluster cost is higher than expected"
+        description: "Current EKS cost is {{ $value }} per hour"
+    
+    - alert: CostSavingsTarget
+      expr: (emr_cluster_cost_per_hour - (sum(rate(container_cpu_usage_seconds_total[1h])) * 0.0464)) / emr_cluster_cost_per_hour * 100 < 50
+      for: 15m
+      labels:
+        severity: info
+      annotations:
+        summary: "Cost savings target not met"
+        description: "Current cost savings is {{ $value }}%, target is 50%"

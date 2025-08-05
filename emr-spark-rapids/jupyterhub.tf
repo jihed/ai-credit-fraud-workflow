@@ -284,34 +284,8 @@ resource "kubernetes_storage_class" "efs" {
   depends_on = [module.eks, aws_efs_file_system.jupyterhub_shared]
 }
 
-# JupyterHub Helm release
-resource "helm_release" "jupyterhub" {
-  name       = "jupyterhub"
-  repository = "https://hub.jupyter.org/helm-chart/"
-  chart      = "jupyterhub"
-  version    = "3.3.7"
-  namespace  = kubernetes_namespace.jupyterhub.metadata[0].name
-
-  values = [
-    templatefile("${path.module}/helm-values/jupyterhub-values.yaml", {
-      account_id                = data.aws_caller_identity.current.account_id
-      aws_region               = local.region
-      cluster_name             = module.eks.cluster_name
-      s3_bucket_name           = module.s3_bucket.s3_bucket_id
-      emr_virtual_cluster_id   = module.emr_containers["ml-team-a"].virtual_cluster_id
-      emr_execution_role_arn   = module.emr_containers["ml-team-a"].iam_execution_role_arn
-      jupyterhub_secret_token  = data.aws_secretsmanager_secret_version.jupyterhub_secret_version.secret_string
-    })
-  ]
-
-  depends_on = [
-    module.eks,
-    kubernetes_namespace.jupyterhub,
-    kubernetes_service_account.jupyterhub_notebook,
-    kubernetes_persistent_volume_claim.jupyterhub_shared_data,
-    aws_ecr_repository.jupyterhub_rapids
-  ]
-}
+# JupyterHub deployment is now handled by EKS Blueprint addons in addons.tf
+# This file maintains the supporting resources for JupyterHub
 
 # ConfigMap for notebook templates
 resource "kubernetes_config_map" "notebook_templates" {

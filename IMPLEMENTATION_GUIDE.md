@@ -2,21 +2,27 @@
 
 Deploy a production-ready fraud detection platform on Amazon EKS with NVIDIA RAPIDS, achieving **10.5x faster processing** and **8.4x cost reduction** compared to traditional CPU-based solutions.
 
-## 🚀 Quick Start (5 Minutes)
+## 🚀 Quick Start (5 Minutes) - Terraform-Only Approach
 
 ```bash
 # 1. Clone and setup
 git clone <repository-url> && cd ai-credit-fraud-workflow
 
-# 2. Deploy infrastructure
-cd emr-spark-rapids && terraform init && terraform apply -auto-approve
+# 2. Deploy everything with Terraform-only approach
+cd emr-spark-rapids && ./terraform-deploy.sh
 
-# 3. Configure access
-aws eks update-kubeconfig --region us-west-2 --name $(terraform output -raw cluster_name)
+# 3. Validate deployment
+./terraform-validate.sh
 
-# 4. Verify deployment
-kubectl get nodes && kubectl get pods --all-namespaces
+# 4. Get access information
+terraform output quick_start_commands
 ```
+
+## ⚠️ Migration Notice
+
+**This guide has been updated to use the new Terraform-only deployment approach.** All bash scripts have been replaced with EKS Blueprint addons for better reliability and maintainability.
+
+For the complete Terraform-only implementation, see: `README_TERRAFORM_ONLY.md`
 
 ## 📋 Prerequisites
 
@@ -49,37 +55,66 @@ aws sts get-caller-identity
 export AWS_DEFAULT_REGION=us-west-2
 ```
 
-## 🏗️ Infrastructure Deployment
+## 🏗️ Infrastructure Deployment (Terraform-Only)
 
-### Step 1: Deploy EKS Cluster
+### Step 1: Complete Deployment
 ```bash
 cd emr-spark-rapids
 
-# Initialize and deploy
-terraform init
-terraform plan  # Review resources
-terraform apply -auto-approve
+# Deploy everything with single command
+./terraform-deploy.sh
 
-# Configure kubectl
-CLUSTER_NAME=$(terraform output -raw cluster_name)
-aws eks update-kubeconfig --region $AWS_DEFAULT_REGION --name $CLUSTER_NAME
-
-# Verify cluster
-kubectl get nodes
-kubectl get namespaces
+# This script automatically:
+# - Initializes Terraform
+# - Validates configuration
+# - Deploys all resources
+# - Configures kubectl
+# - Provides access information
 ```
 
-### Step 2: Verify Core Components
+### Step 2: Validate Deployment
 ```bash
-# Check essential components
-kubectl get deployment karpenter -n karpenter
-kubectl get daemonset nvidia-device-plugin-daemonset -n kube-system
-kubectl get daemonset ebs-csi-node -n kube-system
-kubectl get deployment aws-load-balancer-controller -n kube-system
+# Comprehensive validation of all components
+./terraform-validate.sh
+
+# This validates:
+# - EKS cluster and nodes
+# - All EKS Blueprint addons
+# - Monitoring stack
+# - ML platform components
+# - GPU support
+# - Network connectivity
 ```
 
-### Step 3: Fix Missing Components (If Needed)
-If any components are missing, run this automated fix:
+### Step 3: Access Platform Services
+```bash
+# Get all access information
+terraform output quick_start_commands
+
+# Access JupyterHub
+kubectl get service proxy-public -n jupyterhub
+
+# Access monitoring dashboards
+kubectl port-forward service/kube-prometheus-stack-grafana 3000:80 -n kube-prometheus-stack
+
+# Access Ray dashboard
+kubectl port-forward service/fraud-detection-cluster-head-svc 8265:8265 -n ml-team-a
+```
+
+### Step 4: Clean Up (When Done)
+```bash
+# Safe cleanup of all resources
+./terraform-cleanup.sh
+```
+
+## 🔧 Legacy Bash Script Approach (Deprecated)
+
+**Note: The following bash script approach has been replaced by the Terraform-only deployment above.**
+
+<details>
+<summary>Click to view legacy bash script instructions (deprecated)</summary>
+
+If any components are missing in the legacy approach, run this automated fix:
 
 ```bash
 #!/bin/bash
@@ -142,30 +177,41 @@ fi
 echo "🎉 All components installed successfully!"
 ```
 
-## 🔧 Platform Components Setup
+</details>
 
-### Step 1: Deploy Karpenter NodePools
+## 🔧 Platform Components (Terraform-Managed)
+
+All platform components are now automatically deployed via Terraform and EKS Blueprint addons:
+
+### Automatically Deployed Components
+
+**Core Infrastructure:**
+- EKS Cluster v1.31 with Karpenter v1.6.0
+- GPU and CPU NodePools with auto-scaling
+- EKS Pod Identity for secure AWS integration
+- VPC with secondary CIDR for pod networking
+
+**ML Platform Services:**
+- JupyterHub with GPU-enabled notebooks
+- Ray Cluster with KubeRay Operator v1.1.0
+- Inference Service with auto-scaling
+- Sample fraud detection data
+
+**Monitoring & Observability:**
+- Prometheus & Grafana stack
+- NVIDIA DCGM Exporter for GPU metrics
+- Kubecost for cost monitoring
+- AWS for Fluent Bit for log aggregation
+
+### Verification Commands
 ```bash
-# Apply latest Karpenter v1.6.0 configuration
-kubectl apply -f karpenter-v1.6-config.yaml
+# Check all components
+./terraform-validate.sh
 
-# Verify NodePools
+# Check specific components
 kubectl get nodepools
-kubectl describe nodepool gpu-ml-workloads
-```
-
-### Step 2: Deploy Ray Operator
-```bash
-# Add Ray Helm repository
-helm repo add kuberay https://ray-project.github.io/kuberay-helm/
-helm repo update
-
-# Install KubeRay Operator v1.1.0
-helm install kuberay-operator kuberay/kuberay-operator \
-    --namespace ray-system --create-namespace --version 1.1.0
-
-# Verify installation
 kubectl get deployment kuberay-operator -n ray-system
+kubectl get pods -n kube-prometheus-stack
 ```
 
 ### Step 3: Deploy JupyterHub
@@ -591,40 +637,69 @@ After completing this setup, you'll achieve:
 
 ## 🔧 Troubleshooting
 
+### Automated Validation
+```bash
+# Run comprehensive validation first
+./terraform-validate.sh
+
+# This checks all components and provides detailed status
+```
+
 ### Common Issues
 
-**GPU Nodes Not Available:**
+**Deployment Issues:**
 ```bash
-kubectl logs -f deployment/karpenter -n karpenter
-kubectl get nodeclaims
+# Check Terraform state
+terraform plan
+terraform refresh
+
+# Check EKS cluster status
+aws eks describe-cluster --name $(terraform output -raw cluster_name)
+```
+
+**Component Issues:**
+```bash
+# Check EKS Blueprint addons
+kubectl get pods -n kube-system
+kubectl get deployment aws-load-balancer-controller -n kube-system
+
+# Check GPU nodes
+kubectl get nodes -l accelerator=nvidia
 kubectl describe nodepool gpu-ml-workloads
 ```
 
-**JupyterHub Not Accessible:**
+**Service Access Issues:**
 ```bash
-kubectl get pods -n jupyterhub
-kubectl logs deployment/jupyterhub -n jupyterhub
+# Check service status
+kubectl get services --all-namespaces
+kubectl get ingress --all-namespaces
+
+# Check LoadBalancer status
+kubectl describe service proxy-public -n jupyterhub
 ```
 
-**Ray Cluster Issues:**
+**Complete Reset:**
 ```bash
-kubectl get raycluster -n ml-team-a
-kubectl describe raycluster fraud-detection-cluster -n ml-team-a
-```
-
-**EKS Pod Identity Issues:**
-```bash
-aws eks list-pod-identity-associations --cluster-name $CLUSTER_NAME
-kubectl exec -it <pod-name> -n <namespace> -- aws sts get-caller-identity
+# If issues persist, clean up and redeploy
+./terraform-cleanup.sh
+./terraform-deploy.sh
 ```
 
 ## 🎉 Next Steps
 
-1. **Explore Advanced Features**: Multi-model serving, advanced monitoring, cost optimization
-2. **Scale Your Workloads**: Add more GPU nodes, implement auto-scaling policies
-3. **Production Deployment**: Set up GitOps with ArgoCD, implement disaster recovery
+1. **Explore the Platform**: Access JupyterHub and run GPU-accelerated notebooks
+2. **Train Models**: Use Ray cluster for distributed XGBoost training
+3. **Monitor Performance**: Check Grafana dashboards and Kubecost for cost optimization
+4. **Scale Workloads**: Karpenter will automatically scale GPU/CPU nodes as needed
+5. **Production Deployment**: All components are production-ready with monitoring and alerting
 
-You now have a fully functional GPU-accelerated fraud detection platform on EKS! 🚀
+You now have a fully functional GPU-accelerated fraud detection platform on EKS deployed entirely through Terraform! 🚀
+
+## 📚 Additional Resources
+
+- **Complete Terraform Guide**: `README_TERRAFORM_ONLY.md`
+- **Migration Summary**: `MIGRATION_SUMMARY.md`
+- **Deployment Scripts**: `terraform-deploy.sh`, `terraform-validate.sh`, `terraform-cleanup.sh`
 
 ---
 

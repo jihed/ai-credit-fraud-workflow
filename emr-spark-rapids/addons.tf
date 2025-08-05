@@ -108,11 +108,7 @@ module "eks_blueprints_addons" {
   #---------------------------------------
   # Kubernetes Add-ons
   #---------------------------------------
-  #---------------------------------------------------------------
-  # CoreDNS Autoscaler helps to scale for large EKS Clusters
-  #   Further tuning for CoreDNS is to leverage NodeLocal DNSCache -> https://kubernetes.io/docs/tasks/administer-cluster/nodelocaldns/
-  #---------------------------------------------------------------
-
+  
   #---------------------------------------
   # Metrics Server
   #---------------------------------------
@@ -155,14 +151,20 @@ module "eks_blueprints_addons" {
   }
 
   #---------------------------------------
-  # Prommetheus and Grafana stack
+  # AWS for Fluent Bit - Enhanced Log Aggregation
   #---------------------------------------
-  #---------------------------------------------------------------
-  # Install Kafka Monitoring Stack with Prometheus and Grafana
-  # 1- Grafana port-forward `kubectl port-forward svc/kube-prometheus-stack-grafana 8080:80 -n kube-prometheus-stack`
-  # 2- Grafana Admin user: admin
-  # 3- Get admin user password: `aws secretsmanager get-secret-value --secret-id <output.grafana_secret_name> --region $AWS_REGION --query "SecretString" --output text`
-  #---------------------------------------------------------------
+  enable_aws_for_fluentbit = true
+  aws_for_fluentbit = {
+    chart_version = "0.1.32"
+    values = [templatefile("${path.module}/helm-values/aws-for-fluentbit-values.yaml", {
+      cluster_name = module.eks.cluster_name
+      region       = local.region
+    })]
+  }
+
+  #---------------------------------------
+  # Prometheus and Grafana Stack
+  #---------------------------------------
   enable_kube_prometheus_stack = true
   kube_prometheus_stack = {
     values = [
@@ -172,7 +174,9 @@ module "eks_blueprints_addons" {
         amp_irsa            = aws_iam_role.amp_ingest_role[0].arn
         amp_remotewrite_url = "https://aps-workspaces.${local.region}.amazonaws.com/workspaces/${aws_prometheus_workspace.amp[0].id}/api/v1/remote_write"
         amp_url             = "https://aps-workspaces.${local.region}.amazonaws.com/workspaces/${aws_prometheus_workspace.amp[0].id}"
-      }) : templatefile("${path.module}/helm-values/kube-prometheus.yaml", {})
+      }) : templatefile("${path.module}/helm-values/kube-prometheus.yaml", {
+        grafana_admin_password = data.aws_secretsmanager_secret_version.admin_password_version.secret_string
+      })
     ]
     chart_version = "65.5.1"
     set_sensitive = [
@@ -180,10 +184,268 @@ module "eks_blueprints_addons" {
         name  = "grafana.adminPassword"
         value = data.aws_secretsmanager_secret_version.admin_password_version.secret_string
       }
-    ],
+    ]
   }
 
+
+
   tags = local.tags
+}
+
+#---------------------------------------------------------------
+# NVIDIA DCGM Exporter for GPU Metrics
+#---------------------------------------------------------------
+resource "kubernetes_namespace" "nvidia_monitoring" {
+  count = var.enable_nvidia_gpu_monitoring ? 1 : 0
+  
+  metadata {
+    name = "nvidia-monitoring"
+    labels = {
+      name = "nvidia-monitoring"
+    }
+  }
+
+  depends_on = [module.eks]
+}
+
+resource "kubernetes_daemonset" "nvidia_dcgm_exporter" {
+  count = var.enable_nvidia_gpu_monitoring ? 1 : 0
+  metadata {
+    name      = "nvidia-dcgm-exporter"
+    namespace = "kube-system"
+    labels = {
+      app = "nvidia-dcgm-exporter"
+    }
+  }
+
+  spec {
+    selector {
+      match_labels = {
+        app = "nvidia-dcgm-exporter"
+      }
+    }
+
+    template {
+      metadata {
+        labels = {
+          app = "nvidia-dcgm-exporter"
+        }
+        annotations = {
+          "prometheus.io/scrape" = "true"
+          "prometheus.io/port"   = "9400"
+        }
+      }
+
+      spec {
+        toleration {
+          key      = "nvidia.com/gpu"
+          operator = "Exists"
+          effect   = "NoSchedule"
+        }
+
+        node_selector = {
+          "accelerator" = "nvidia"
+        }
+
+        container {
+          name  = "nvidia-dcgm-exporter"
+          image = "nvcr.io/nvidia/k8s/dcgm-exporter:3.3.5-3.4.0-ubuntu22.04"
+
+          port {
+            name           = "metrics"
+            container_port = 9400
+          }
+
+          security_context {
+            run_as_non_root = false
+            run_as_user     = 0
+          }
+
+          volume_mount {
+            name       = "proc"
+            mount_path = "/host/proc"
+            read_only  = true
+          }
+
+          volume_mount {
+            name       = "sys"
+            mount_path = "/host/sys"
+            read_only  = true
+          }
+
+          env {
+            name  = "DCGM_EXPORTER_LISTEN"
+            value = ":9400"
+          }
+
+          env {
+            name  = "DCGM_EXPORTER_KUBERNETES"
+            value = "true"
+          }
+
+          resources {
+            requests = {
+              memory = "128Mi"
+              cpu    = "50m"
+            }
+            limits = {
+              memory = "256Mi"
+              cpu    = "100m"
+            }
+          }
+        }
+
+        volume {
+          name = "proc"
+          host_path {
+            path = "/proc"
+          }
+        }
+
+        volume {
+          name = "sys"
+          host_path {
+            path = "/sys"
+          }
+        }
+
+        host_network = true
+        host_pid     = true
+      }
+    }
+  }
+
+  depends_on = [module.eks_blueprints_addons]
+}
+
+# Service for NVIDIA DCGM Exporter
+resource "kubernetes_service" "nvidia_dcgm_exporter" {
+  count = var.enable_nvidia_gpu_monitoring ? 1 : 0
+  metadata {
+    name      = "nvidia-dcgm-exporter"
+    namespace = "kube-system"
+    labels = {
+      app = "nvidia-dcgm-exporter"
+    }
+  }
+
+  spec {
+    port {
+      name        = "metrics"
+      port        = 9400
+      target_port = 9400
+    }
+
+    selector = {
+      app = "nvidia-dcgm-exporter"
+    }
+  }
+
+  depends_on = [kubernetes_daemonset.nvidia_dcgm_exporter[0]]
+}
+
+# ServiceMonitor for NVIDIA DCGM Exporter
+resource "kubernetes_manifest" "nvidia_dcgm_service_monitor" {
+  count = var.enable_nvidia_gpu_monitoring ? 1 : 0
+  manifest = {
+    apiVersion = "monitoring.coreos.com/v1"
+    kind       = "ServiceMonitor"
+    metadata = {
+      name      = "nvidia-dcgm-exporter"
+      namespace = "kube-system"
+      labels = {
+        app = "nvidia-dcgm-exporter"
+      }
+    }
+    spec = {
+      selector = {
+        matchLabels = {
+          app = "nvidia-dcgm-exporter"
+        }
+      }
+      endpoints = [
+        {
+          port     = "metrics"
+          interval = "30s"
+          path     = "/metrics"
+        }
+      ]
+    }
+  }
+
+  depends_on = [
+    kubernetes_service.nvidia_dcgm_exporter[0],
+    module.eks_blueprints_addons
+  ]
+}
+
+#---------------------------------------------------------------
+# Kubecost for Cost Monitoring
+#---------------------------------------------------------------
+resource "kubernetes_namespace" "kubecost" {
+  count = var.enable_cost_monitoring ? 1 : 0
+  metadata {
+    name = "kubecost"
+    labels = {
+      name = "kubecost"
+    }
+  }
+
+  depends_on = [module.eks]
+}
+
+resource "helm_release" "kubecost" {
+  count = var.enable_cost_monitoring ? 1 : 0
+  name       = "kubecost"
+  repository = "https://kubecost.github.io/cost-analyzer/"
+  chart      = "cost-analyzer"
+  version    = "2.3.4"
+  namespace  = kubernetes_namespace.kubecost[0].metadata[0].name
+
+  values = [templatefile("${path.module}/helm-values/kubecost-values.yaml", {
+    cluster_name = module.eks.cluster_name
+    region       = local.region
+  })]
+
+  depends_on = [
+    module.eks_blueprints_addons,
+    kubernetes_namespace.kubecost[0]
+  ]
+}
+
+# ServiceMonitor for Kubecost
+resource "kubernetes_manifest" "kubecost_service_monitor" {
+  count = var.enable_cost_monitoring ? 1 : 0
+  manifest = {
+    apiVersion = "monitoring.coreos.com/v1"
+    kind       = "ServiceMonitor"
+    metadata = {
+      name      = "kubecost"
+      namespace = kubernetes_namespace.kubecost[0].metadata[0].name
+      labels = {
+        app = "kubecost"
+      }
+    }
+    spec = {
+      selector = {
+        matchLabels = {
+          app = "cost-analyzer"
+        }
+      }
+      endpoints = [
+        {
+          port     = "http"
+          interval = "60s"
+          path     = "/metrics"
+        }
+      ]
+    }
+  }
+
+  depends_on = [
+    helm_release.kubecost[0],
+    module.eks_blueprints_addons
+  ]
 }
 
 #---------------------------------------------------------------
@@ -196,135 +458,85 @@ resource "aws_eks_access_entry" "karpenter_nodes" {
 }
 
 #---------------------------------------------------------------
-# Data on EKS Kubernetes Addons
+# Enhanced Karpenter NodePools for ML Workloads
 #---------------------------------------------------------------
-module "eks_data_addons" {
-  source  = "aws-ia/eks-data-addons/aws"
-  version = "1.34" # ensure to update this to the latest/desired version
+resource "kubectl_manifest" "gpu_nodepool" {
+  count = var.enable_karpenter_gpu_nodes ? 1 : 0
+  yaml_body = templatefile("${path.module}/k8s/karpenter-gpu-nodepool.yaml", {
+    cluster_name = module.eks.cluster_name
+    node_role    = split("/", module.eks_blueprints_addons.karpenter.node_iam_role_arn)[1]
+    subnet_id    = module.vpc.private_subnets[2]
+  })
 
-  oidc_provider_arn = module.eks.oidc_provider_arn
+  depends_on = [module.eks_blueprints_addons]
+}
 
-  enable_karpenter_resources = true
-  karpenter_resources_helm_config = {
-    spark-gpu-karpenter = {
-      values = [
-        <<-EOT
-      name: spark-gpu-karpenter
-      clusterName: ${module.eks.cluster_name}
-      ec2NodeClass:
-        karpenterRole: ${split("/", module.eks_blueprints_addons.karpenter.node_iam_role_arn)[1]}
-        subnetSelectorTerms:
-          id: ${module.vpc.private_subnets[2]}
-        securityGroupSelectorTerms:
-          tags:
-            Name: ${module.eks.cluster_name}-node
-        instanceStorePolicy: RAID0
+resource "kubectl_manifest" "cpu_nodepool" {
+  count = var.enable_karpenter_cpu_nodes ? 1 : 0
+  yaml_body = templatefile("${path.module}/k8s/karpenter-cpu-nodepool.yaml", {
+    cluster_name = module.eks.cluster_name
+    node_role    = split("/", module.eks_blueprints_addons.karpenter.node_iam_role_arn)[1]
+    subnet_id    = module.vpc.private_subnets[3]
+  })
 
-      nodePool:
-        labels:
-          - type: karpenter
-          - NodeGroupType: spark-executor-gpu-karpenter
-        taints:
-          - key: nvidia.com/gpu
-            value: "Exists"
-            effect: "NoSchedule"
-        requirements:
-          - key: "karpenter.k8s.aws/instance-family"
-            operator: In
-            values: ["g5"]
-          - key: "karpenter.k8s.aws/instance-size"
-            operator: In
-            values: [ "2xlarge" ]
-          - key: "kubernetes.io/arch"
-            operator: In
-            values: ["amd64"]
-          - key: "karpenter.sh/capacity-type"
-            operator: In
-            values: ["spot", "on-demand"]
-        limits:
-          cpu: 1000
-        disruption:
-          consolidationPolicy: WhenEmpty
-          consolidateAfter: 30s
-          expireAfter: 720h
-        weight: 100
-      EOT
-      ]
-    }
-    spark-driver-cpu-karpenter = {
-      values = [
-        <<-EOT
-      name: spark-driver-cpu-karpenter
-      clusterName: ${module.eks.cluster_name}
-      ec2NodeClass:
-        karpenterRole: ${split("/", module.eks_blueprints_addons.karpenter.node_iam_role_arn)[1]}
-        subnetSelectorTerms:
-          id: ${module.vpc.private_subnets[3]}
-        securityGroupSelectorTerms:
-          tags:
-            Name: ${module.eks.cluster_name}-node
-        instanceStorePolicy: RAID0
+  depends_on = [module.eks_blueprints_addons]
+}
 
-      nodePool:
-        labels:
-          - type: karpenter
-          - NodeGroupType: spark-driver-cpu-karpenter
-        requirements:
-          - key: "karpenter.k8s.aws/instance-family"
-            operator: In
-            values: ["m5"]
-          - key: "karpenter.k8s.aws/instance-size"
-            operator: In
-            values: [ "xlarge", "2xlarge", "4xlarge", "8xlarge"]
-          - key: "kubernetes.io/arch"
-            operator: In
-            values: ["amd64"]
-          - key: "karpenter.sh/capacity-type"
-            operator: In
-            values: ["spot", "on-demand"]
-        limits:
-          cpu: 1000
-        disruption:
-          consolidationPolicy: WhenEmpty
-          consolidateAfter: 30s
-          expireAfter: 720h
-        weight: 100
-      EOT
-      ]
-    }
-  }
+#---------------------------------------------------------------
+# NVIDIA GPU Support
+#---------------------------------------------------------------
+# NVIDIA GPU Operator (if enabled)
+resource "helm_release" "nvidia_gpu_operator" {
+  count = var.enable_nvidia_gpu_operator ? 1 : 0
 
-  #---------------------------------------------------------------
-  # NVIDIA GPU Operator Add-on
-  #---------------------------------------------------------------
-  enable_nvidia_gpu_operator = var.enable_nvidia_gpu_operator
+  name       = "nvidia-gpu-operator"
+  repository = "https://helm.ngc.nvidia.com/nvidia"
+  chart      = "gpu-operator"
+  version    = "v23.9.1"
+  namespace  = "nvidia-gpu-operator"
+  create_namespace = true
 
-  nvidia_gpu_operator_helm_config = {
-    version = "v23.9.1"
-    values  = [templatefile("${path.module}/helm-values/nvidia-operator-values.yaml", {})]
-  }
+  values = [templatefile("${path.module}/helm-values/nvidia-operator-values.yaml", {
+    cluster_name = module.eks.cluster_name
+  })]
 
-  #---------------------------------------------------------------
-  # NVIDIA Device Plugin Add-on
-  #---------------------------------------------------------------
-  # Enable only when NVIDIA GPU Operator is disabled
-  enable_nvidia_device_plugin = !(var.enable_nvidia_gpu_operator)
+  depends_on = [module.eks_blueprints_addons]
+}
 
-  #---------------------------------------------------------------
-  # KubeRay Operator for distributed ML training
-  #---------------------------------------------------------------
-  enable_kuberay_operator = true
-  kuberay_operator_helm_config = {
-    name             = "kuberay-operator"
-    chart_version    = "1.1.0"
-    repository       = "https://ray-project.github.io/kuberay-helm/"
-    namespace        = "ray-system"
-    create_namespace = true
-    values = [templatefile("${path.module}/helm-values/kuberay-operator-values.yaml", {
-      cluster_name = module.eks.cluster_name
-    })]
-  }
+# NVIDIA Device Plugin (if GPU Operator is disabled)
+resource "helm_release" "nvidia_device_plugin" {
+  count = var.enable_nvidia_gpu_operator ? 0 : 1
 
+  name       = "nvidia-device-plugin"
+  repository = "https://nvidia.github.io/k8s-device-plugin"
+  chart      = "nvidia-device-plugin"
+  version    = "0.15.0"
+  namespace  = "nvidia-device-plugin"
+  create_namespace = true
+
+  values = [templatefile("${path.module}/helm-values/nvidia-device-plugin-values.yaml", {
+    cluster_name = module.eks.cluster_name
+  })]
+
+  depends_on = [module.eks_blueprints_addons]
+}
+
+#---------------------------------------------------------------
+# KubeRay Operator for Distributed ML Training
+#---------------------------------------------------------------
+resource "helm_release" "kuberay_operator" {
+  name       = "kuberay-operator"
+  repository = "https://ray-project.github.io/kuberay-helm/"
+  chart      = "kuberay-operator"
+  version    = "1.1.0"
+  namespace  = "ray-system"
+  create_namespace = true
+
+  values = [templatefile("${path.module}/helm-values/kuberay-operator-values.yaml", {
+    cluster_name = module.eks.cluster_name
+  })]
+
+  depends_on = [module.eks_blueprints_addons]
 }
 
 #---------------------------------------------------------------

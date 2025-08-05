@@ -1,0 +1,93 @@
+apiVersion: karpenter.sh/v1beta1
+kind: NodePool
+metadata:
+  name: gpu-ml-workloads
+  labels:
+    workload-type: gpu
+spec:
+  template:
+    metadata:
+      labels:
+        workload-type: gpu
+        NodeGroupType: spark-executor-gpu-karpenter
+      annotations:
+        node.kubernetes.io/instance-type: "g5.2xlarge"
+    spec:
+      requirements:
+        - key: "karpenter.k8s.aws/instance-family"
+          operator: In
+          values: ["g5"]
+        - key: "karpenter.k8s.aws/instance-size"
+          operator: In
+          values: ["2xlarge", "4xlarge"]
+        - key: "kubernetes.io/arch"
+          operator: In
+          values: ["amd64"]
+        - key: "karpenter.sh/capacity-type"
+          operator: In
+          values: ["spot", "on-demand"]
+        - key: "node.kubernetes.io/instance-type"
+          operator: In
+          values: ["g5.2xlarge", "g5.4xlarge"]
+      nodeClassRef:
+        apiVersion: karpenter.k8s.aws/v1beta1
+        kind: EC2NodeClass
+        name: gpu-ml-workloads
+      taints:
+        - key: nvidia.com/gpu
+          value: "true"
+          effect: NoSchedule
+  limits:
+    cpu: 1000
+  disruption:
+    consolidationPolicy: WhenEmpty
+    consolidateAfter: 30s
+    expireAfter: 720h
+---
+apiVersion: karpenter.k8s.aws/v1beta1
+kind: EC2NodeClass
+metadata:
+  name: gpu-ml-workloads
+  labels:
+    workload-type: gpu
+spec:
+  amiFamily: AL2
+  role: ${node_role}
+  subnetSelectorTerms:
+    - id: ${subnet_id}
+  securityGroupSelectorTerms:
+    - tags:
+        Name: ${cluster_name}-node
+  instanceStorePolicy: RAID0
+  userData: |
+    #!/bin/bash
+    /etc/eks/bootstrap.sh ${cluster_name}
+    
+    # Configure NVMe volumes in RAID0 configuration
+    export LOCAL_DISKS='raid0'
+    
+    # Install NVIDIA drivers and Docker runtime
+    yum update -y
+    yum install -y nvidia-driver-latest-dkms
+    
+    # Configure Docker for NVIDIA runtime
+    cat > /etc/docker/daemon.json << 'EOF'
+    {
+        "default-runtime": "nvidia",
+        "runtimes": {
+            "nvidia": {
+                "path": "nvidia-container-runtime",
+                "runtimeArgs": []
+            }
+        }
+    }
+    EOF
+    
+    systemctl restart docker
+    
+    # Label node for GPU workloads
+    kubectl label node $(hostname) accelerator=nvidia --overwrite || true
+  tags:
+    Name: ${cluster_name}-gpu-node
+    NodeType: gpu-ml-workloads
+    Environment: production

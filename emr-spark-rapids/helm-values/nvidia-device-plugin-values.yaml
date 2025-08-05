@@ -1,0 +1,130 @@
+# NVIDIA Device Plugin Configuration for EKS
+
+image:
+  repository: nvcr.io/nvidia/k8s-device-plugin
+  tag: v0.15.0
+  pullPolicy: IfNotPresent
+
+# Resource configuration
+resources:
+  limits:
+    memory: 512Mi
+    cpu: 500m
+  requests:
+    memory: 64Mi
+    cpu: 50m
+
+# Node selector to run only on GPU nodes
+nodeSelector:
+  accelerator: nvidia
+
+# Tolerations for GPU nodes
+tolerations:
+  - key: nvidia.com/gpu
+    operator: Exists
+    effect: NoSchedule
+
+# Affinity rules
+affinity:
+  nodeAffinity:
+    requiredDuringSchedulingIgnoredDuringExecution:
+      nodeSelectorTerms:
+      - matchExpressions:
+        - key: accelerator
+          operator: In
+          values:
+          - nvidia
+
+# Security context
+securityContext:
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop:
+    - ALL
+
+# Pod security context
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 1000
+  fsGroup: 1000
+
+# Service account
+serviceAccount:
+  create: true
+  name: nvidia-device-plugin
+
+# RBAC
+rbac:
+  create: true
+
+# Priority class
+priorityClassName: system-node-critical
+
+# Update strategy
+updateStrategy:
+  type: RollingUpdate
+  rollingUpdate:
+    maxUnavailable: 1
+
+# Environment variables
+env:
+  - name: PASS_DEVICE_SPECS
+    value: "true"
+  - name: FAIL_ON_INIT_ERROR
+    value: "false"
+  - name: DEVICE_LIST_STRATEGY
+    value: "envvar"
+  - name: DEVICE_ID_STRATEGY
+    value: "uuid"
+  - name: NVIDIA_VISIBLE_DEVICES
+    value: "all"
+  - name: NVIDIA_DRIVER_CAPABILITIES
+    value: "compute,utility"
+
+# Volume mounts for device access
+volumeMounts:
+  - name: device-plugin
+    mountPath: /var/lib/kubelet/device-plugins
+  - name: dev
+    mountPath: /dev
+
+volumes:
+  - name: device-plugin
+    hostPath:
+      path: /var/lib/kubelet/device-plugins
+  - name: dev
+    hostPath:
+      path: /dev
+
+# Monitoring
+monitoring:
+  enabled: true
+  serviceMonitor:
+    enabled: true
+    interval: 30s
+    labels:
+      app: nvidia-device-plugin
+
+# Logging
+logging:
+  level: info
+  format: json
+
+# Health checks
+livenessProbe:
+  httpGet:
+    path: /healthz
+    port: 8080
+  initialDelaySeconds: 30
+  periodSeconds: 30
+  timeoutSeconds: 5
+  failureThreshold: 3
+
+readinessProbe:
+  httpGet:
+    path: /readyz
+    port: 8080
+  initialDelaySeconds: 5
+  periodSeconds: 10
+  timeoutSeconds: 5
+  failureThreshold: 3
