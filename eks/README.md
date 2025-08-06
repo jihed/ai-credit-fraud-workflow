@@ -31,6 +31,7 @@ eks/
 │   ├── notebooks/          # Sample fraud detection notebooks
 │   └── build-images.sh     # Docker build script
 ├── blueprint-analysis.md   # Data-on-EKS blueprint analysis
+├── POD_IDENTITY_MIGRATION.md  # Pod Identity implementation guide
 └── JARK_STACK_IMPLEMENTATION.md  # Complete implementation guide
 ```
 
@@ -131,6 +132,7 @@ cd terraform
 
 - **[Terraform README](terraform/README.md)**: Detailed infrastructure documentation
 - **[JARK Implementation Guide](JARK_STACK_IMPLEMENTATION.md)**: Complete implementation details
+- **[Pod Identity Migration](POD_IDENTITY_MIGRATION.md)**: EKS Pod Identity implementation
 - **[Blueprint Analysis](blueprint-analysis.md)**: Data-on-EKS blueprint analysis
 
 ## 🎯 Benefits

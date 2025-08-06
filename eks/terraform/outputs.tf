@@ -51,6 +51,22 @@ output "emr_execution_role_arn" {
   value       = module.emr_containers.iam_role_arn
 }
 
+# Pod Identity outputs
+output "jupyterhub_pod_identity_role_arn" {
+  description = "JupyterHub Pod Identity Role ARN"
+  value       = aws_iam_role.jupyterhub_pod_identity_role.arn
+}
+
+output "ray_pod_identity_role_arn" {
+  description = "Ray Cluster Pod Identity Role ARN"
+  value       = var.enable_kuberay_operator ? aws_iam_role.ray_pod_identity_role[0].arn : "Ray not enabled"
+}
+
+output "argo_pod_identity_role_arn" {
+  description = "Argo Workflows Pod Identity Role ARN"
+  value       = var.enable_argo_workflows ? aws_iam_role.argo_workflows_pod_identity_role[0].arn : "Argo Workflows not enabled"
+}
+
 output "s3_bucket_name" {
   description = "S3 bucket name for EMR data and logs"
   value       = module.s3_bucket.s3_bucket_id

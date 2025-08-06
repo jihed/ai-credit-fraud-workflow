@@ -199,7 +199,7 @@ resource "kubectl_manifest" "ray_cluster" {
 }
 
 #---------------------------------------------------------------
-# Ray Service Account with IRSA
+# Ray Service Account (Pod Identity)
 #---------------------------------------------------------------
 resource "kubernetes_service_account" "ray_service_account" {
   count = var.enable_kuberay_operator ? 1 : 0
@@ -207,37 +207,51 @@ resource "kubernetes_service_account" "ray_service_account" {
   metadata {
     name      = "ray-service-account"
     namespace = kubernetes_namespace.ray_clusters[0].metadata[0].name
-    annotations = {
-      "eks.amazonaws.com/role-arn" = module.ray_irsa[0].iam_role_arn
-    }
   }
 
   depends_on = [kubernetes_namespace.ray_clusters]
 }
 
 #---------------------------------------------------------------
-# IRSA for Ray Cluster
+# EKS Pod Identity for Ray Cluster
 #---------------------------------------------------------------
-module "ray_irsa" {
+resource "aws_iam_role" "ray_pod_identity_role" {
   count = var.enable_kuberay_operator ? 1 : 0
   
-  source  = "terraform-aws-modules/iam/aws//modules/iam-role-for-service-accounts-eks"
-  version = "~> 5.55"
+  name_prefix = "${local.name}-ray-pod-identity-"
 
-  role_name_prefix = "Ray-Cluster-IRSA"
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Principal = {
+          Service = "pods.eks.amazonaws.com"
+        }
+        Action = [
+          "sts:AssumeRole",
+          "sts:TagSession"
+        ]
+      }
+    ]
+  })
 
-  role_policy_arns = {
-    s3_access = aws_iam_policy.ray_s3_policy[0].arn
-  }
-
-  oidc_providers = {
-    main = {
-      provider_arn               = module.eks.oidc_provider_arn
-      namespace_service_accounts = ["ray-clusters:ray-service-account"]
-    }
-  }
+  managed_policy_arns = [
+    aws_iam_policy.ray_s3_policy[0].arn
+  ]
 
   tags = local.tags
+}
+
+resource "aws_eks_pod_identity_association" "ray_cluster" {
+  count = var.enable_kuberay_operator ? 1 : 0
+  
+  cluster_name    = module.eks.cluster_name
+  namespace       = "ray-clusters"
+  service_account = "ray-service-account"
+  role_arn        = aws_iam_role.ray_pod_identity_role[0].arn
+
+  depends_on = [module.eks, kubernetes_namespace.ray_clusters]
 }
 
 resource "aws_iam_policy" "ray_s3_policy" {

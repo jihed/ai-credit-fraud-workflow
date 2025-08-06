@@ -45,7 +45,7 @@ module "eks" {
   eks_managed_node_groups = {
     system = {
       instance_types = ["m5.large"]
-      
+
       min_size     = 1
       max_size     = 3
       desired_size = 2
@@ -112,7 +112,7 @@ module "eks_blueprints_addons" {
     }
   }
   karpenter = {
-    chart_version       = "1.2.1"
+    chart_version       = "1.6.0"
     repository_username = data.aws_ecrpublic_authorization_token.token.user_name
     repository_password = data.aws_ecrpublic_authorization_token.token.password
   }
@@ -122,7 +122,7 @@ module "eks_blueprints_addons" {
   #---------------------------------------
   enable_aws_load_balancer_controller = true
   aws_load_balancer_controller = {
-    chart_version = "1.11.0"
+    chart_version = "2.13.4"
   }
 
   #---------------------------------------
@@ -206,176 +206,6 @@ module "eks_blueprints_addons" {
   }
 
   #---------------------------------------
-  # JupyterHub for Unified Notebook Experience
-  #---------------------------------------
-  enable_jupyterhub = var.enable_jupyterhub
-  jupyterhub = {
-    chart_version = "3.2.1"
-    values = [
-      <<-EOT
-        hub:
-          config:
-            JupyterHub:
-              admin_access: true
-              authenticator_class: dummy
-            DummyAuthenticator:
-              password: "fraud-detection-demo"
-            Spawner:
-              default_url: '/lab'
-              cmd: ['jupyter-labhub']
-          
-          extraEnv:
-            VIRTUAL_CLUSTER_ID:
-              value: "${module.emr_containers.virtual_cluster_id}"
-            EMR_EXECUTION_ROLE_ARN:
-              value: "${module.emr_containers.iam_role_arn}"
-            S3_BUCKET:
-              value: "${module.s3_bucket.s3_bucket_id}"
-            AWS_DEFAULT_REGION:
-              value: "${local.region}"
-
-        singleuser:
-          profileList:
-            - display_name: "EMR Spark + RAPIDS"
-              description: "Feature engineering with GPU acceleration"
-              default: true
-              kubespawner_override:
-                image: 'fraud-detection/emr-spark-rapids:latest'
-                cpu_limit: 4
-                mem_limit: '16G'
-                cpu_guarantee: 2
-                mem_guarantee: '8G'
-                environment:
-                  VIRTUAL_CLUSTER_ID: "${module.emr_containers.virtual_cluster_id}"
-                  EMR_EXECUTION_ROLE_ARN: "${module.emr_containers.iam_role_arn}"
-                  S3_BUCKET: "${module.s3_bucket.s3_bucket_id}"
-                  SPARK_DRIVER_MEMORY: '4g'
-                  SPARK_EXECUTOR_MEMORY: '8g'
-                extra_resource_limits:
-                  nvidia.com/gpu: "0"
-                
-            - display_name: "Ray ML Training"
-              description: "Distributed ML training and serving"
-              kubespawner_override:
-                image: 'fraud-detection/ray-ml:latest'
-                cpu_limit: 8
-                mem_limit: '32G'
-                cpu_guarantee: 4
-                mem_guarantee: '16G'
-                environment:
-                  RAY_ADDRESS: 'ray://ray-cluster-head:10001'
-                  S3_BUCKET: "${module.s3_bucket.s3_bucket_id}"
-                extra_resource_limits:
-                  nvidia.com/gpu: "1"
-                node_selector:
-                  provisioner: spark-gpu-rapids
-                tolerations:
-                  - key: nvidia.com/gpu
-                    operator: Exists
-                    effect: NoSchedule
-                    
-            - display_name: "Unified Development"
-              description: "Both EMR Spark and Ray capabilities"
-              kubespawner_override:
-                image: 'fraud-detection/unified-dev:latest'
-                cpu_limit: 6
-                mem_limit: '24G'
-                cpu_guarantee: 3
-                mem_guarantee: '12G'
-                environment:
-                  VIRTUAL_CLUSTER_ID: "${module.emr_containers.virtual_cluster_id}"
-                  EMR_EXECUTION_ROLE_ARN: "${module.emr_containers.iam_role_arn}"
-                  RAY_ADDRESS: 'ray://ray-cluster-head:10001'
-                  S3_BUCKET: "${module.s3_bucket.s3_bucket_id}"
-
-          storage:
-            type: 'dynamic'
-            capacity: '10Gi'
-            homeMountPath: '/home/jovyan'
-            dynamic:
-              storageClass: 'gp3'
-              
-          serviceAccountName: 'jupyterhub-user-sa'
-          
-          extraEnv:
-            GRANT_SUDO: "yes"
-            NOTEBOOK_ARGS: "--allow-root"
-
-        rbac:
-          create: true
-          
-        serviceAccount:
-          create: true
-          annotations:
-            eks.amazonaws.com/role-arn: "${module.jupyterhub_irsa.iam_role_arn}"
-      EOT
-    ]
-  }
-
-  #---------------------------------------
-  # Ray Operator for Distributed ML
-  #---------------------------------------
-  enable_kuberay_operator = var.enable_kuberay_operator
-  kuberay_operator = {
-    chart_version = "1.2.2"
-    values = [
-      <<-EOT
-        image:
-          repository: kuberay/operator
-          tag: v1.2.2
-        resources:
-          limits:
-            cpu: 500m
-            memory: 512Mi
-          requests:
-            cpu: 100m
-            memory: 256Mi
-      EOT
-    ]
-  }
-
-  #---------------------------------------
-  # Argo Workflows for ML Pipelines
-  #---------------------------------------
-  enable_argo_workflows = var.enable_argo_workflows
-  argo_workflows = {
-    chart_version = "0.45.1"
-    values = [
-      <<-EOT
-        controller:
-          resources:
-            limits:
-              cpu: 500m
-              memory: 512Mi
-            requests:
-              cpu: 100m
-              memory: 256Mi
-        server:
-          enabled: true
-          resources:
-            limits:
-              cpu: 200m
-              memory: 256Mi
-            requests:
-              cpu: 100m
-              memory: 128Mi
-          serviceType: LoadBalancer
-          serviceAnnotations:
-            service.beta.kubernetes.io/aws-load-balancer-type: "nlb"
-            service.beta.kubernetes.io/aws-load-balancer-scheme: "internet-facing"
-        executor:
-          resources:
-            limits:
-              cpu: 200m
-              memory: 256Mi
-            requests:
-              cpu: 100m
-              memory: 128Mi
-      EOT
-    ]
-  }
-
-  #---------------------------------------
   # Prometheus Stack for Monitoring
   #---------------------------------------
   enable_kube_prometheus_stack = var.enable_kube_prometheus_stack
@@ -452,8 +282,8 @@ module "ebs_csi_driver_irsa" {
   source  = "terraform-aws-modules/iam/aws//modules/iam-role-for-service-accounts-eks"
   version = "~> 5.55"
 
-  role_name_prefix             = "EBS-CSI-Driver-IRSA"
-  attach_ebs_csi_policy        = true
+  role_name_prefix      = "EBS-CSI-Driver-IRSA"
+  attach_ebs_csi_policy = true
 
   oidc_providers = {
     main = {
@@ -466,27 +296,51 @@ module "ebs_csi_driver_irsa" {
 }
 
 #---------------------------------------------------------------
-# IRSA for JupyterHub
+# EKS Pod Identity for JupyterHub
 #---------------------------------------------------------------
-module "jupyterhub_irsa" {
-  source  = "terraform-aws-modules/iam/aws//modules/iam-role-for-service-accounts-eks"
-  version = "~> 5.55"
+resource "aws_iam_role" "jupyterhub_pod_identity_role" {
+  name_prefix = "${local.name}-jupyterhub-pod-identity-"
 
-  role_name_prefix = "JupyterHub-IRSA"
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Principal = {
+          Service = "pods.eks.amazonaws.com"
+        }
+        Action = [
+          "sts:AssumeRole",
+          "sts:TagSession"
+        ]
+      }
+    ]
+  })
 
-  role_policy_arns = {
-    s3_access = aws_iam_policy.jupyterhub_s3_policy.arn
-    emr_access = aws_iam_policy.jupyterhub_emr_policy.arn
-  }
-
-  oidc_providers = {
-    main = {
-      provider_arn               = module.eks.oidc_provider_arn
-      namespace_service_accounts = ["jupyterhub:jupyterhub", "jupyterhub:jupyterhub-user-sa"]
-    }
-  }
+  managed_policy_arns = [
+    aws_iam_policy.jupyterhub_s3_policy.arn,
+    aws_iam_policy.jupyterhub_emr_policy.arn
+  ]
 
   tags = local.tags
+}
+
+resource "aws_eks_pod_identity_association" "jupyterhub" {
+  cluster_name    = module.eks.cluster_name
+  namespace       = "jupyterhub"
+  service_account = "jupyterhub"
+  role_arn        = aws_iam_role.jupyterhub_pod_identity_role.arn
+
+  depends_on = [module.eks]
+}
+
+resource "aws_eks_pod_identity_association" "jupyterhub_user" {
+  cluster_name    = module.eks.cluster_name
+  namespace       = "jupyterhub"
+  service_account = "jupyterhub-user-sa"
+  role_arn        = aws_iam_role.jupyterhub_pod_identity_role.arn
+
+  depends_on = [module.eks]
 }
 
 #---------------------------------------------------------------

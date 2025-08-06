@@ -1,0 +1,161 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: jupyterhub
+  namespace: argocd
+  labels:
+    app.kubernetes.io/name: jupyterhub
+    app.kubernetes.io/part-of: fraud-detection-demo
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  
+  source:
+    repoURL: https://hub.jupyter.org/helm-chart/
+    chart: jupyterhub
+    targetRevision: 3.2.1
+    helm:
+      valueFiles:
+        - values.yaml
+      values: |
+        # JupyterHub configuration for fraud detection demo
+        hub:
+          config:
+            JupyterHub:
+              authenticator_class: 'jupyterhub.auth.DummyAuthenticator'
+            DummyAuthenticator:
+              password: 'fraud-detection-demo'
+            Spawner:
+              default_url: '/lab'
+          
+          extraEnv:
+            VIRTUAL_CLUSTER_ID: ''  # Populated via external-secrets or manual update
+            EMR_EXECUTION_ROLE_ARN: ''
+            RAY_CLUSTER_ADDRESS: 'ray://ray-cluster-head-svc.ray-system.svc.cluster.local:10001'
+            S3_BUCKET_NAME: ''
+          
+          service:
+            type: LoadBalancer
+            annotations:
+              service.beta.kubernetes.io/aws-load-balancer-type: "nlb"
+              service.beta.kubernetes.io/aws-load-balancer-scheme: "internet-facing"
+
+        singleuser:
+          cpu:
+            limit: 2
+            guarantee: 1
+          memory:
+            limit: 4G
+            guarantee: 2G
+          
+          storage:
+            type: dynamic
+            capacity: 10Gi
+            homeMountPath: /home/jovyan
+            dynamic:
+              storageClass: gp3
+          
+          serviceAccountName: jupyterhub-user-sa
+          
+          profileList:
+            - display_name: "Fraud Detection - Data Processing"
+              description: "EMR Spark + RAPIDS for feature engineering (4 CPU, 8GB RAM)"
+              default: true
+              kubespawner_override:
+                image: 'jupyter/pyspark-notebook:spark-3.5.0'
+                cpu_limit: 4
+                cpu_guarantee: 2
+                mem_limit: '8G'
+                mem_guarantee: '4G'
+                environment:
+                  SPARK_DRIVER_MEMORY: '4g'
+                  SPARK_EXECUTOR_MEMORY: '4g'
+                  
+            - display_name: "Fraud Detection - ML Training"
+              description: "Ray + XGBoost for distributed training (8 CPU, 16GB RAM)"
+              kubespawner_override:
+                image: 'rayproject/ray-ml:2.8.0-py310'
+                cpu_limit: 8
+                cpu_guarantee: 4
+                mem_limit: '16G'
+                mem_guarantee: '8G'
+                environment:
+                  RAY_ADDRESS: 'ray://ray-cluster-head-svc.ray-system.svc.cluster.local:10001'
+                  
+            - display_name: "Fraud Detection - GPU Accelerated"
+              description: "RAPIDS + GPU for accelerated processing (4 CPU, 16GB RAM, 1 GPU)"
+              kubespawner_override:
+                image: 'rapidsai/rapidsai:23.12-cuda11.8-runtime-ubuntu22.04-py3.10'
+                cpu_limit: 4
+                cpu_guarantee: 2
+                mem_limit: '16G'
+                mem_guarantee: '8G'
+                extra_resource_limits:
+                  nvidia.com/gpu: "1"
+                extra_resource_guarantees:
+                  nvidia.com/gpu: "1"
+                node_selector:
+                  nvidia.com/gpu: "true"
+                tolerations:
+                  - key: nvidia.com/gpu
+                    operator: Equal
+                    value: "true"
+                    effect: NoSchedule
+
+        proxy:
+          service:
+            type: LoadBalancer
+            annotations:
+              service.beta.kubernetes.io/aws-load-balancer-type: "nlb"
+              service.beta.kubernetes.io/aws-load-balancer-scheme: "internet-facing"
+          
+          https:
+            enabled: false
+
+        scheduling:
+          userScheduler:
+            enabled: true
+            replicas: 1
+          
+          podPriority:
+            enabled: true
+            globalDefault: false
+            defaultPriority: 0
+            userPlaceholderPriority: -10
+
+        cull:
+          enabled: true
+          timeout: 3600
+          every: 600
+          concurrency: 10
+          users: false
+          maxAge: 0
+
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: jupyterhub
+
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+      allowEmpty: false
+    syncOptions:
+      - CreateNamespace=true
+      - PrunePropagationPolicy=foreground
+      - PruneLast=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m
+
+  revisionHistoryLimit: 10
+
+  info:
+    - name: 'Description'
+      value: 'JupyterHub for fraud detection demo with multiple notebook profiles'
+    - name: 'Documentation'
+      value: 'https://jupyterhub.readthedocs.io/'

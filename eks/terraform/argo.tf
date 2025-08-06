@@ -15,7 +15,7 @@ resource "kubernetes_namespace" "argo_workflows" {
 }
 
 #---------------------------------------------------------------
-# Argo Workflows Service Account with IRSA
+# Argo Workflows Service Account (Pod Identity)
 #---------------------------------------------------------------
 resource "kubernetes_service_account" "argo_workflows_sa" {
   count = var.enable_argo_workflows ? 1 : 0
@@ -23,38 +23,63 @@ resource "kubernetes_service_account" "argo_workflows_sa" {
   metadata {
     name      = "argo-workflows-sa"
     namespace = kubernetes_namespace.argo_workflows[0].metadata[0].name
-    annotations = {
-      "eks.amazonaws.com/role-arn" = module.argo_workflows_irsa[0].iam_role_arn
-    }
   }
 
   depends_on = [kubernetes_namespace.argo_workflows]
 }
 
 #---------------------------------------------------------------
-# IRSA for Argo Workflows
+# EKS Pod Identity for Argo Workflows
 #---------------------------------------------------------------
-module "argo_workflows_irsa" {
+resource "aws_iam_role" "argo_workflows_pod_identity_role" {
   count = var.enable_argo_workflows ? 1 : 0
   
-  source  = "terraform-aws-modules/iam/aws//modules/iam-role-for-service-accounts-eks"
-  version = "~> 5.55"
+  name_prefix = "${local.name}-argo-pod-identity-"
 
-  role_name_prefix = "Argo-Workflows-IRSA"
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Principal = {
+          Service = "pods.eks.amazonaws.com"
+        }
+        Action = [
+          "sts:AssumeRole",
+          "sts:TagSession"
+        ]
+      }
+    ]
+  })
 
-  role_policy_arns = {
-    s3_access = aws_iam_policy.argo_workflows_s3_policy[0].arn
-    emr_access = aws_iam_policy.argo_workflows_emr_policy[0].arn
-  }
-
-  oidc_providers = {
-    main = {
-      provider_arn               = module.eks.oidc_provider_arn
-      namespace_service_accounts = ["argo-workflows:argo-workflows-sa", "argo-workflows:argo-server"]
-    }
-  }
+  managed_policy_arns = [
+    aws_iam_policy.argo_workflows_s3_policy[0].arn,
+    aws_iam_policy.argo_workflows_emr_policy[0].arn
+  ]
 
   tags = local.tags
+}
+
+resource "aws_eks_pod_identity_association" "argo_workflows" {
+  count = var.enable_argo_workflows ? 1 : 0
+  
+  cluster_name    = module.eks.cluster_name
+  namespace       = "argo-workflows"
+  service_account = "argo-workflows-sa"
+  role_arn        = aws_iam_role.argo_workflows_pod_identity_role[0].arn
+
+  depends_on = [module.eks, kubernetes_namespace.argo_workflows]
+}
+
+resource "aws_eks_pod_identity_association" "argo_server" {
+  count = var.enable_argo_workflows ? 1 : 0
+  
+  cluster_name    = module.eks.cluster_name
+  namespace       = "argo-workflows"
+  service_account = "argo-server"
+  role_arn        = aws_iam_role.argo_workflows_pod_identity_role[0].arn
+
+  depends_on = [module.eks, kubernetes_namespace.argo_workflows]
 }
 
 resource "aws_iam_policy" "argo_workflows_s3_policy" {

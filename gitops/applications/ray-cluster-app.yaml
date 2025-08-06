@@ -1,0 +1,258 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: ray-cluster
+  namespace: argocd
+  labels:
+    app.kubernetes.io/name: ray-cluster
+    app.kubernetes.io/part-of: fraud-detection-demo
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  
+  source:
+    repoURL: https://ray-project.github.io/kuberay-helm/
+    chart: ray-cluster
+    targetRevision: 1.2.2
+    helm:
+      valueFiles:
+        - values.yaml
+      values: |
+        # Ray cluster configuration for fraud detection ML workloads
+        image:
+          repository: rayproject/ray-ml
+          tag: "2.8.0-py310"
+          pullPolicy: IfNotPresent
+
+        head:
+          rayStartParams:
+            dashboard-host: '0.0.0.0'
+            dashboard-port: '8265'
+            port: '6379'
+            object-manager-port: '8076'
+            node-manager-port: '8077'
+            gcs-server-port: '8078'
+            min-worker-port: '10002'
+            max-worker-port: '19999'
+            redis-password: 'fraud-detection-ray'
+          
+          resources:
+            limits:
+              cpu: 4
+              memory: 16Gi
+            requests:
+              cpu: 2
+              memory: 8Gi
+          
+          service:
+            type: LoadBalancer
+            annotations:
+              service.beta.kubernetes.io/aws-load-balancer-type: "nlb"
+              service.beta.kubernetes.io/aws-load-balancer-scheme: "internal"
+            ports:
+              - name: client
+                port: 10001
+                protocol: TCP
+                targetPort: 10001
+              - name: dashboard
+                port: 8265
+                protocol: TCP
+                targetPort: 8265
+              - name: gcs-server
+                port: 8078
+                protocol: TCP
+                targetPort: 8078
+          
+          nodeSelector:
+            NodeGroupType: system
+          
+          tolerations:
+            - key: system
+              operator: Equal
+              value: "true"
+              effect: NoSchedule
+
+        worker:
+          groupName: fraud-detection-workers
+          replicas: 2
+          minReplicas: 1
+          maxReplicas: 10
+          
+          rayStartParams:
+            port: '6379'
+            object-manager-port: '8076'
+            node-manager-port: '8077'
+            min-worker-port: '10002'
+            max-worker-port: '19999'
+            redis-password: 'fraud-detection-ray'
+          
+          resources:
+            limits:
+              cpu: 8
+              memory: 32Gi
+            requests:
+              cpu: 4
+              memory: 16Gi
+          
+          nodeSelector:
+            provisioner: spark-cpu-optimized
+          
+          additionalWorkerGroups:
+            gpu-workers:
+              replicas: 0
+              minReplicas: 0
+              maxReplicas: 4
+              
+              rayStartParams:
+                port: '6379'
+                object-manager-port: '8076'
+                node-manager-port: '8077'
+                min-worker-port: '10002'
+                max-worker-port: '19999'
+                redis-password: 'fraud-detection-ray'
+              
+              resources:
+                limits:
+                  cpu: 16
+                  memory: 64Gi
+                  nvidia.com/gpu: 1
+                requests:
+                  cpu: 8
+                  memory: 32Gi
+                  nvidia.com/gpu: 1
+              
+              nodeSelector:
+                provisioner: spark-gpu-rapids
+                nvidia.com/gpu: "true"
+              
+              tolerations:
+                - key: nvidia.com/gpu
+                  operator: Equal
+                  value: "true"
+                  effect: NoSchedule
+            
+            memory-workers:
+              replicas: 1
+              minReplicas: 0
+              maxReplicas: 3
+              
+              rayStartParams:
+                port: '6379'
+                object-manager-port: '8076'
+                node-manager-port: '8077'
+                min-worker-port: '10002'
+                max-worker-port: '19999'
+                redis-password: 'fraud-detection-ray'
+              
+              resources:
+                limits:
+                  cpu: 16
+                  memory: 128Gi
+                requests:
+                  cpu: 8
+                  memory: 64Gi
+              
+              nodeSelector:
+                provisioner: spark-memory-optimized
+
+        serviceAccount:
+          create: true
+          name: ray-cluster-sa
+          annotations:
+            eks.amazonaws.com/role-arn: ""  # Populated via external-secrets or manual update
+
+        autoscaling:
+          enabled: true
+          minReplicas: 1
+          maxReplicas: 10
+          targetCPUUtilizationPercentage: 70
+          targetMemoryUtilizationPercentage: 80
+
+        serve:
+          enabled: true
+          
+        monitoring:
+          enabled: true
+          prometheus:
+            enabled: true
+            port: 8080
+            path: /metrics
+          grafana:
+            enabled: false
+
+        security:
+          networkPolicy:
+            enabled: true
+            ingress:
+              - from:
+                  - namespaceSelector:
+                      matchLabels:
+                        name: jupyterhub
+                  - namespaceSelector:
+                      matchLabels:
+                        name: ray-system
+            egress:
+              - to: []
+          
+          podSecurityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
+            fsGroup: 1000
+          
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: false
+            capabilities:
+              drop:
+                - ALL
+
+        storage:
+          enabled: true
+          size: 50Gi
+          storageClass: gp3
+          accessMode: ReadWriteOnce
+
+        env:
+          - name: RAY_DISABLE_IMPORT_WARNING
+            value: "1"
+          - name: RAY_DEDUP_LOGS
+            value: "0"
+          - name: PYTHONPATH
+            value: "/home/ray/fraud_detection:/home/ray"
+          - name: AWS_DEFAULT_REGION
+            value: "us-west-2"
+
+        labels:
+          app.kubernetes.io/name: ray-cluster
+          app.kubernetes.io/component: fraud-detection
+          app.kubernetes.io/part-of: fraud-detection-demo
+
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: ray-system
+
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+      allowEmpty: false
+    syncOptions:
+      - CreateNamespace=true
+      - PrunePropagationPolicy=foreground
+      - PruneLast=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m
+
+  revisionHistoryLimit: 10
+
+  info:
+    - name: 'Description'
+      value: 'Ray cluster for distributed ML training and inference in fraud detection demo'
+    - name: 'Documentation'
+      value: 'https://docs.ray.io/'
