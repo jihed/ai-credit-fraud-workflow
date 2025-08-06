@@ -36,6 +36,8 @@ output "private_subnets" {
   value       = module.vpc.private_subnets
 }
 
+
+
 output "emr_virtual_cluster_id" {
   description = "EMR on EKS Virtual Cluster ID"
   value       = aws_emrcontainers_virtual_cluster.fraud_detection.id

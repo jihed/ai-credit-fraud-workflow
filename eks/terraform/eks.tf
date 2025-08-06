@@ -16,8 +16,8 @@ module "eks" {
   enable_cluster_creator_admin_permissions = true
 
   vpc_id = module.vpc.vpc_id
-  # Use secondary CIDR subnets for EKS control plane
-  subnet_ids = module.vpc.intra_subnets
+  # Use private_subnets for EKS Control Plane ENIs (10.1.x.x CIDR)
+  subnet_ids = module.vpc.private_subnets
 
   # Combine root account, current user/role and additional roles for KMS key access
   kms_key_administrators = distinct(concat([
@@ -56,7 +56,7 @@ module "eks" {
   }
 
   #---------------------------------------
-  # Security Group Rules
+  # EKS Managed Node Groups
   #---------------------------------------
   cluster_security_group_additional_rules = {
     ingress_nodes_ephemeral_ports_tcp = {
@@ -69,6 +69,7 @@ module "eks" {
     }
   }
 
+  # Extend node-to-node security group rules
   node_security_group_additional_rules = {
     ingress_self_all = {
       description = "Node to node all ports/protocols"
@@ -78,6 +79,9 @@ module "eks" {
       type        = "ingress"
       self        = true
     }
+    # Allows Control Plane Nodes to talk to Worker nodes on all ports. Added this to simplify the example and further avoid issues with Add-ons communication with Control plane.
+    # This can be restricted further to specific port based on the requirement for each Add-on e.g., metrics-server 4443, spark-operator 8080, karpenter 8443 etc.
+    # Change this according to your security requirements if needed
     ingress_cluster_to_node_all_traffic = {
       description                   = "Cluster API to Nodegroup all traffic"
       protocol                      = "-1"
@@ -88,63 +92,59 @@ module "eks" {
     }
   }
 
-  #---------------------------------------
-  # EKS Managed Node Groups
-  #---------------------------------------
   eks_managed_node_group_defaults = {
     iam_role_additional_policies = {
+      # Not required, but used in the example to access the nodes to inspect mounted volumes
       AmazonSSMManagedInstanceCore = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
     }
+
     ebs_optimized = true
+    # This block device is used only for root volume. Adjust volume according to your size.
+    # NOTE: Don't use this volume for Spark workloads
     block_device_mappings = {
       xvda = {
         device_name = "/dev/xvda"
         ebs = {
           volume_size = 100
           volume_type = "gp3"
-          encrypted   = true
         }
       }
     }
   }
 
   eks_managed_node_groups = {
-    # Core node group for system components and add-ons
+    #  We recommend to have a MNG to place your critical workloads and add-ons
+    #  Then rely on Karpenter to scale your workloads
+    #  You can also make uses on nodeSelector and Taints/tolerations to spread workloads on MNG or Karpenter provisioners
     core_node_group = {
       name        = "core-node-group"
-      description = "Core managed node group for system components"
+      description = "EKS managed node group example launch template"
+      # Use private_subnets for EKS nodes (10.1.x.x CIDR)
+      subnet_ids = module.vpc.private_subnets
 
-      # Use secondary CIDR subnets for nodes
-      subnet_ids = module.vpc.intra_subnets
-
-      min_size     = 2
-      max_size     = 6
+      min_size     = 3
+      max_size     = 9
       desired_size = 3
 
       instance_types = ["m5.xlarge"]
 
       labels = {
-        WorkerType               = "ON_DEMAND"
-        NodeGroupType            = "core"
-        "karpenter.sh/discovery" = local.name
+        WorkerType    = "ON_DEMAND"
+        NodeGroupType = "core"
       }
 
-      taints = [
-        {
-          key    = "system"
-          value  = "true"
-          effect = "NO_SCHEDULE"
-        }
-      ]
-
       tags = {
-        Name = "${local.name}-core-node-group"
+        Name                     = "core-node-grp",
+        "karpenter.sh/discovery" = local.name
       }
     }
   }
 
+
   tags = local.tags
 }
+
+
 
 #---------------------------------------------------------------
 # Pod Identity Association for VPC CNI
@@ -260,7 +260,7 @@ module "eks_blueprints_addons" {
   #---------------------------------------
   enable_aws_load_balancer_controller = true
   aws_load_balancer_controller = {
-    chart_version = "2.13.4"
+    chart_version = "1.13.4"
   }
 
   #---------------------------------------

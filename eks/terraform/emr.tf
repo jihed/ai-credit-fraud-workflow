@@ -44,12 +44,54 @@ resource "aws_iam_role" "emr_execution_role" {
     ]
   })
 
-  managed_policy_arns = [
-    "arn:aws:iam::aws:policy/AmazonEMRContainersServiceRolePolicy",
-    aws_iam_policy.emr_s3_policy.arn
-  ]
+  tags = local.tags
+}
+
+resource "aws_iam_policy" "emr_execution_service_policy" {
+  name_prefix = "${local.name}-emr-execution-service-"
+  description = "IAM policy for EMR on EKS execution service"
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "emr-containers:StartJobRun",
+          "emr-containers:ListJobRuns",
+          "emr-containers:DescribeJobRun",
+          "emr-containers:CancelJobRun",
+          "emr-containers:TagResource",
+          "emr-containers:UntagResource",
+          "emr-containers:ListTagsForResource"
+        ]
+        Resource = "*"
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "logs:CreateLogGroup",
+          "logs:CreateLogStream",
+          "logs:PutLogEvents",
+          "logs:DescribeLogGroups",
+          "logs:DescribeLogStreams"
+        ]
+        Resource = "*"
+      }
+    ]
+  })
 
   tags = local.tags
+}
+
+resource "aws_iam_role_policy_attachment" "emr_execution_service_policy" {
+  policy_arn = aws_iam_policy.emr_execution_service_policy.arn
+  role       = aws_iam_role.emr_execution_role.name
+}
+
+resource "aws_iam_role_policy_attachment" "emr_execution_s3_policy" {
+  policy_arn = aws_iam_policy.emr_s3_policy.arn
+  role       = aws_iam_role.emr_execution_role.name
 }
 
 resource "aws_iam_policy" "emr_s3_policy" {

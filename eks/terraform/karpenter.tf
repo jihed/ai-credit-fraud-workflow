@@ -32,7 +32,7 @@ module "eks_data_addons" {
         karpenterRole: ${split("/", module.eks_blueprints_addons.karpenter.node_iam_role_arn)[1]}
         subnetSelectorTerms:
           tags:
-            Name: "${module.eks.cluster_name}-intra*"
+            karpenter.sh/discovery: ${module.eks.cluster_name}
         securityGroupSelectorTerms:
           tags:
             Name: ${module.eks.cluster_name}-node
@@ -91,7 +91,7 @@ module "eks_data_addons" {
         karpenterRole: ${split("/", module.eks_blueprints_addons.karpenter.node_iam_role_arn)[1]}
         subnetSelectorTerms:
           tags:
-            Name: "${module.eks.cluster_name}-intra*"
+            karpenter.sh/discovery: ${module.eks.cluster_name}
         securityGroupSelectorTerms:
           tags:
             Name: ${module.eks.cluster_name}-node
@@ -155,7 +155,7 @@ module "eks_data_addons" {
         karpenterRole: ${split("/", module.eks_blueprints_addons.karpenter.node_iam_role_arn)[1]}
         subnetSelectorTerms:
           tags:
-            Name: "${module.eks.cluster_name}-intra*"
+            karpenter.sh/discovery: ${module.eks.cluster_name}
         securityGroupSelectorTerms:
           tags:
             Name: ${module.eks.cluster_name}-node
