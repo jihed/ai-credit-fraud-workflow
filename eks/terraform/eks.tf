@@ -5,14 +5,30 @@ module "eks" {
   source  = "terraform-aws-modules/eks/aws"
   version = "~> 20.33"
 
-  cluster_name                   = local.name
-  cluster_version                = var.eks_cluster_version
+  cluster_name    = local.name
+  cluster_version = var.eks_cluster_version
+
+  # WARNING: Avoid using this option in production accounts
   cluster_endpoint_public_access = true
 
-  # Combine all subnets for EKS cluster
-  subnet_ids = concat(module.vpc.private_subnets, module.vpc.intra_subnets)
+  # Modern authentication mode with Pod Identity
+  authentication_mode                      = "API_AND_CONFIG_MAP"
+  enable_cluster_creator_admin_permissions = true
 
-  # EKS Addons
+  vpc_id = module.vpc.vpc_id
+  # Use secondary CIDR subnets for EKS control plane
+  subnet_ids = module.vpc.intra_subnets
+
+  # Combine root account, current user/role and additional roles for KMS key access
+  kms_key_administrators = distinct(concat([
+    "arn:aws:iam::${data.aws_caller_identity.current.account_id}:root"],
+    var.kms_key_admin_roles,
+    [data.aws_iam_session_context.current.issuer_arn]
+  ))
+
+  #---------------------------------------
+  # EKS Managed Add-ons
+  #---------------------------------------
   cluster_addons = {
     coredns = {
       most_recent = true
@@ -21,12 +37,11 @@ module "eks" {
       most_recent = true
     }
     vpc-cni = {
-      most_recent              = true
-      before_compute           = true
-      service_account_role_arn = module.vpc_cni_irsa.iam_role_arn
+      most_recent    = true
+      before_compute = true
+      preserve       = true
       configuration_values = jsonencode({
         env = {
-          # Reference docs https://docs.aws.amazon.com/eks/latest/userguide/cni-increase-ip-addresses.html
           ENABLE_PREFIX_DELEGATION = "true"
           WARM_PREFIX_TARGET       = "1"
         }
@@ -36,26 +51,82 @@ module "eks" {
       most_recent = true
     }
     aws-ebs-csi-driver = {
-      most_recent              = true
-      service_account_role_arn = module.ebs_csi_driver_irsa.iam_role_arn
+      most_recent = true
     }
   }
 
-  # EKS Managed Node Groups - Only for system components
+  #---------------------------------------
+  # Security Group Rules
+  #---------------------------------------
+  cluster_security_group_additional_rules = {
+    ingress_nodes_ephemeral_ports_tcp = {
+      description                = "Nodes on ephemeral ports"
+      protocol                   = "tcp"
+      from_port                  = 1025
+      to_port                    = 65535
+      type                       = "ingress"
+      source_node_security_group = true
+    }
+  }
+
+  node_security_group_additional_rules = {
+    ingress_self_all = {
+      description = "Node to node all ports/protocols"
+      protocol    = "-1"
+      from_port   = 0
+      to_port     = 0
+      type        = "ingress"
+      self        = true
+    }
+    ingress_cluster_to_node_all_traffic = {
+      description                   = "Cluster API to Nodegroup all traffic"
+      protocol                      = "-1"
+      from_port                     = 0
+      to_port                       = 0
+      type                          = "ingress"
+      source_cluster_security_group = true
+    }
+  }
+
+  #---------------------------------------
+  # EKS Managed Node Groups
+  #---------------------------------------
+  eks_managed_node_group_defaults = {
+    iam_role_additional_policies = {
+      AmazonSSMManagedInstanceCore = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
+    }
+    ebs_optimized = true
+    block_device_mappings = {
+      xvda = {
+        device_name = "/dev/xvda"
+        ebs = {
+          volume_size = 100
+          volume_type = "gp3"
+          encrypted   = true
+        }
+      }
+    }
+  }
+
   eks_managed_node_groups = {
-    system = {
-      instance_types = ["m5.large"]
-
-      min_size     = 1
-      max_size     = 3
-      desired_size = 2
-
-      # Use secondary CIDR subnets for better IP management
+    # Core node group for system components and add-ons
+    core_node_group = {
+      name        = "core-node-group"
+      description = "Core managed node group for system components"
+      
+      # Use secondary CIDR subnets for nodes
       subnet_ids = module.vpc.intra_subnets
 
+      min_size     = 2
+      max_size     = 6
+      desired_size = 3
+
+      instance_types = ["m5.xlarge"]
+
       labels = {
-        WorkerType    = "ON_DEMAND"
-        NodeGroupType = "system"
+        WorkerType                   = "ON_DEMAND"
+        NodeGroupType               = "core"
+        "karpenter.sh/discovery"    = local.name
       }
 
       taints = [
@@ -67,26 +138,88 @@ module "eks" {
       ]
 
       tags = {
-        Name = "${local.name}-system-node"
+        Name = "${local.name}-core-node-group"
       }
     }
   }
 
-  # aws-auth configmap
-  manage_aws_auth_configmap = true
-  aws_auth_roles = [
-    # We need to add in the Karpenter node IAM role for nodes launched by Karpenter
-    {
-      rolearn  = module.eks_blueprints_addons.karpenter.node_iam_role_arn
-      username = "system:node:{{EC2PrivateDNSName}}"
-      groups = [
-        "system:bootstrappers",
-        "system:nodes",
-      ]
-    }
+  tags = local.tags
+}
+
+#---------------------------------------------------------------
+# Pod Identity Association for VPC CNI
+#---------------------------------------------------------------
+resource "aws_iam_role" "vpc_cni_pod_identity_role" {
+  name_prefix = "${local.name}-vpc-cni-pod-identity-"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Principal = {
+          Service = "pods.eks.amazonaws.com"
+        }
+        Action = [
+          "sts:AssumeRole",
+          "sts:TagSession"
+        ]
+      }
+    ]
+  })
+
+  managed_policy_arns = [
+    "arn:aws:iam::aws:policy/AmazonEKS_CNI_Policy"
   ]
 
   tags = local.tags
+}
+
+resource "aws_eks_pod_identity_association" "vpc_cni" {
+  cluster_name    = module.eks.cluster_name
+  namespace       = "kube-system"
+  service_account = "aws-node"
+  role_arn        = aws_iam_role.vpc_cni_pod_identity_role.arn
+
+  depends_on = [module.eks]
+}
+
+#---------------------------------------------------------------
+# Pod Identity Association for EBS CSI Driver
+#---------------------------------------------------------------
+resource "aws_iam_role" "ebs_csi_pod_identity_role" {
+  name_prefix = "${local.name}-ebs-csi-pod-identity-"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Principal = {
+          Service = "pods.eks.amazonaws.com"
+        }
+        Action = [
+          "sts:AssumeRole",
+          "sts:TagSession"
+        ]
+      }
+    ]
+  })
+
+  managed_policy_arns = [
+    "arn:aws:iam::aws:policy/service-role/AmazonEBSCSIDriverPolicy"
+  ]
+
+  tags = local.tags
+}
+
+resource "aws_eks_pod_identity_association" "ebs_csi" {
+  cluster_name    = module.eks.cluster_name
+  namespace       = "kube-system"
+  service_account = "ebs-csi-controller-sa"
+  role_arn        = aws_iam_role.ebs_csi_pod_identity_role.arn
+
+  depends_on = [module.eks]
 }
 
 #---------------------------------------------------------------
@@ -126,14 +259,6 @@ module "eks_blueprints_addons" {
   }
 
   #---------------------------------------
-  # Metrics Server
-  #---------------------------------------
-  enable_metrics_server = true
-  metrics_server = {
-    chart_version = "3.12.2"
-  }
-
-  #---------------------------------------
   # AWS for FluentBit - DaemonSet
   #---------------------------------------
   enable_aws_for_fluentbit = true
@@ -162,93 +287,5 @@ module "eks_blueprints_addons" {
     ]
   }
 
-  #---------------------------------------
-  # NVIDIA GPU Operator (Essential for RAPIDS)
-  #---------------------------------------
-  enable_nvidia_gpu_operator = var.enable_nvidia_gpu_operator
-  nvidia_gpu_operator = {
-    chart_version = "v24.9.0"
-    values = [
-      <<-EOT
-        operator:
-          defaultRuntime: containerd
-        driver:
-          enabled: true
-          version: "550.90.07"
-        toolkit:
-          enabled: true
-        devicePlugin:
-          enabled: true
-        dcgmExporter:
-          enabled: true
-        gfd:
-          enabled: true
-        migManager:
-          enabled: false
-        nodeStatusExporter:
-          enabled: true
-        gds:
-          enabled: false
-        vgpuManager:
-          enabled: false
-        vgpuDeviceManager:
-          enabled: false
-        sandboxWorkloads:
-          enabled: false
-        vfioManager:
-          enabled: false
-        tolerations:
-          - key: nvidia.com/gpu
-            operator: Exists
-            effect: NoSchedule
-      EOT
-    ]
-  }
-
-
-
   tags = local.tags
 }
-
-#---------------------------------------------------------------
-# IRSA for VPC CNI
-#---------------------------------------------------------------
-module "vpc_cni_irsa" {
-  source  = "terraform-aws-modules/iam/aws//modules/iam-role-for-service-accounts-eks"
-  version = "~> 5.55"
-
-  role_name_prefix      = "VPC-CNI-IRSA"
-  attach_vpc_cni_policy = true
-  vpc_cni_enable_ipv4   = true
-
-  oidc_providers = {
-    main = {
-      provider_arn               = module.eks.oidc_provider_arn
-      namespace_service_accounts = ["kube-system:aws-node"]
-    }
-  }
-
-  tags = local.tags
-}
-
-#---------------------------------------------------------------
-# IRSA for EBS CSI Driver
-#---------------------------------------------------------------
-module "ebs_csi_driver_irsa" {
-  source  = "terraform-aws-modules/iam/aws//modules/iam-role-for-service-accounts-eks"
-  version = "~> 5.55"
-
-  role_name_prefix      = "EBS-CSI-Driver-IRSA"
-  attach_ebs_csi_policy = true
-
-  oidc_providers = {
-    main = {
-      provider_arn               = module.eks.oidc_provider_arn
-      namespace_service_accounts = ["kube-system:ebs-csi-controller-sa"]
-    }
-  }
-
-  tags = local.tags
-}
-
-

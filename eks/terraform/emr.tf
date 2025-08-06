@@ -1,15 +1,19 @@
 #---------------------------------------------------------------
 # EMR on EKS Virtual Cluster
 #---------------------------------------------------------------
-module "emr_containers" {
-  source  = "terraform-aws-modules/emr/aws//modules/virtual-cluster"
-  version = "2.4.2"
-
+resource "aws_emrcontainers_virtual_cluster" "fraud_detection" {
   name = "${local.name}-emr-virtual-cluster"
 
-  # EKS Cluster Configuration
-  eks_cluster_id = module.eks.cluster_name
-  eks_namespace  = "emr-fraud-detection"
+  container_provider {
+    id   = module.eks.cluster_name
+    type = "EKS"
+
+    info {
+      eks_info {
+        namespace = kubernetes_namespace.emr_fraud_detection.metadata[0].name
+      }
+    }
+  }
 
   tags = local.tags
 
@@ -19,6 +23,59 @@ module "emr_containers" {
     kubernetes_role.emr_containers,
     kubernetes_role_binding.emr_containers
   ]
+}
+
+#---------------------------------------------------------------
+# EMR on EKS Job Execution Role
+#---------------------------------------------------------------
+resource "aws_iam_role" "emr_execution_role" {
+  name_prefix = "${local.name}-emr-execution-"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Principal = {
+          Service = "emr-containers.amazonaws.com"
+        }
+        Action = "sts:AssumeRole"
+      }
+    ]
+  })
+
+  managed_policy_arns = [
+    "arn:aws:iam::aws:policy/AmazonEMRContainersServiceRolePolicy",
+    aws_iam_policy.emr_s3_policy.arn
+  ]
+
+  tags = local.tags
+}
+
+resource "aws_iam_policy" "emr_s3_policy" {
+  name_prefix = "${local.name}-emr-s3-"
+  description = "IAM policy for EMR S3 access"
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "s3:GetObject",
+          "s3:PutObject",
+          "s3:DeleteObject",
+          "s3:ListBucket"
+        ]
+        Resource = [
+          module.s3_bucket.s3_bucket_arn,
+          "${module.s3_bucket.s3_bucket_arn}/*"
+        ]
+      }
+    ]
+  })
+
+  tags = local.tags
 }
 
 #---------------------------------------------------------------
@@ -40,7 +97,7 @@ resource "kubernetes_service_account" "emr_containers_sa_spark" {
     name      = "emr-containers-sa-spark"
     namespace = kubernetes_namespace.emr_fraud_detection.metadata[0].name
     annotations = {
-      "eks.amazonaws.com/role-arn" = module.emr_containers.iam_role_arn
+      "eks.amazonaws.com/role-arn" = aws_iam_role.emr_execution_role.arn
     }
   }
 
