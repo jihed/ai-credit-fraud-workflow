@@ -1,0 +1,40 @@
+# Example Terraform variables file
+# Copy this to terraform.tfvars and customize for your environment
+
+# Basic Configuration
+name   = "fraud-detection-emr-eks"
+region = "us-west-2"
+
+# EKS Configuration
+eks_cluster_version = "1.33"
+
+# VPC Configuration
+vpc_cidr                              = "10.1.0.0/16"
+public_subnets                        = ["10.1.0.0/26", "10.1.0.64/26"]
+private_subnets                       = ["10.1.1.0/24", "10.1.2.0/24"]
+secondary_cidr_blocks                 = ["100.64.0.0/16"]
+eks_data_plane_subnet_secondary_cidr  = ["100.64.0.0/17", "100.64.128.0/17"]
+
+# Add-on Configuration
+enable_nvidia_gpu_operator = true
+enable_amazon_prometheus   = false
+enable_vpc_endpoints        = false
+
+# JARK Stack Configuration
+enable_jupyterhub              = true
+enable_kuberay_operator        = true
+enable_argo_workflows          = true
+enable_kube_prometheus_stack   = true
+
+# Tags
+tags = {
+  Environment = "demo"
+  Team        = "data-science"
+  Project     = "fraud-detection"
+  Owner       = "your-name"
+}
+
+# KMS Key Admin Roles (optional)
+# kms_key_admin_roles = [
+#   "arn:aws:iam::123456789012:role/AdminRole"
+# ]

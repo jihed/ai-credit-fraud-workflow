@@ -1,14 +1,65 @@
 # Accelerating Fraud Detection in Financial Services with NVIDIA RAPIDS on AWS
 
-This repository demonstrates how to accelerate fraud detection workflows in financial services using **NVIDIA RAPIDS** on **AWS**. The project showcases a GPU-accelerated data pipeline that significantly improves processing speed and cost efficiency compared to traditional CPU-based workflows.
+This repository demonstrates how to accelerate fraud detection workflows in financial services using **NVIDIA RAPIDS** on **AWS**. The project showcases both traditional EMR clusters and a modern **JARK stack** (JupyterHub, Argo Workflows, Ray, Karpenter) implementation on Amazon EKS for GPU-accelerated data pipelines.
+
+## 🚀 Quick Start
+
+### Modern EKS Implementation (Recommended)
+For a complete, production-ready fraud detection platform with the JARK stack:
+
+```bash
+cd eks/terraform
+cp terraform.tfvars.example terraform.tfvars
+# Edit with your AWS configuration
+./deploy.sh
+```
+
+**Features:**
+- 🎯 **JupyterHub**: Multi-user notebook environment with fraud detection profiles
+- ⚡ **Ray**: Distributed ML training and serving
+- 🔄 **Argo Workflows**: ML pipeline orchestration
+- 📊 **Grafana**: Comprehensive monitoring
+- 🚀 **Karpenter**: Intelligent auto-scaling with GPU support
+
+👉 **[See EKS Implementation Guide](eks/README.md)**
+
+### Traditional EMR Implementation
+For the original EMR cluster approach, continue reading below.
 
 ## Table of Contents
-1. [What is NVIDIA RAPIDS?](#what-is-nvidia-rapids)
-2. [Why NVIDIA RAPIDS Benefits Financial Services](#why-nvidia-rapids-benefits-financial-services)
-3. [Setting Up EMR Clusters with NVIDIA GPUs](#setting-up-emr-clusters-with-nvidia-gpus)
-4. [Fraud Detection Pipeline](#fraud-detection-pipeline)
-5. [Performance Benchmarks and Cost Efficiency](#performance-benchmarks-and-cost-efficiency)
-6. [Conclusion](#conclusion)
+1. [EKS JARK Stack Implementation](#eks-jark-stack-implementation)
+2. [What is NVIDIA RAPIDS?](#what-is-nvidia-rapids)
+3. [Why NVIDIA RAPIDS Benefits Financial Services](#why-nvidia-rapids-benefits-financial-services)
+4. [Setting Up EMR Clusters with NVIDIA GPUs](#setting-up-emr-clusters-with-nvidia-gpus)
+5. [Fraud Detection Pipeline](#fraud-detection-pipeline)
+6. [Performance Benchmarks and Cost Efficiency](#performance-benchmarks-and-cost-efficiency)
+7. [Conclusion](#conclusion)
+
+---
+
+## EKS JARK Stack Implementation
+
+The **[eks/](eks/)** directory contains a complete, modern implementation of fraud detection using the JARK stack on Amazon EKS:
+
+### 🏗️ Architecture
+- **Data-on-EKS Foundation**: Proven EMR on EKS infrastructure
+- **JARK Stack**: JupyterHub + Argo Workflows + Ray + Karpenter
+- **GPU Acceleration**: NVIDIA RAPIDS with G5/G6 instances
+- **Auto-scaling**: Intelligent resource provisioning
+
+### 🎯 Key Benefits
+- **🚀 10x Faster Development**: Unified notebook environment
+- **📈 Auto-scaling**: Dynamic resource allocation based on workload
+- **🔧 Production Ready**: Kubernetes-native ML platform
+- **💰 Cost Optimized**: Spot instances and intelligent scaling
+- **🔒 Secure**: IRSA-based authentication throughout
+
+### 📚 Documentation
+- **[EKS README](eks/README.md)**: Quick start guide
+- **[Terraform Docs](eks/terraform/README.md)**: Infrastructure details
+- **[Implementation Guide](eks/JARK_STACK_IMPLEMENTATION.md)**: Complete technical details
+
+**👉 [Get Started with EKS Implementation](eks/README.md)**
 
 ---
 
@@ -122,5 +173,10 @@ final_df.write.mode("overwrite").parquet("s3://path/to/output/")
 ## Conclusion
 NVIDIA RAPIDS, integrated with AWS, transforms fraud detection pipelines by delivering unmatched performance and cost efficiency. By combining GPU acceleration with AWS’s scalable infrastructure, businesses can achieve real-time insights, minimize losses, and build a future-proof fraud detection system.
 
-**Ready to supercharge your pipeline?** Explore NVIDIA RAPIDS and AWS GPU instances today to unlock the next level of speed and efficiency.
+**Ready to supercharge your pipeline?** 
+
+- **For Modern ML Platforms**: Use the [EKS JARK Stack implementation](eks/) for a complete, production-ready solution
+- **For Traditional Workflows**: Follow the EMR cluster setup above for GPU-accelerated Spark processing
+
+Explore NVIDIA RAPIDS and AWS GPU instances today to unlock the next level of speed and efficiency in fraud detection!
 
