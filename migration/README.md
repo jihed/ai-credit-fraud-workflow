@@ -18,10 +18,12 @@ migration/
 
 ## Quick Start
 
-1. **Data Migration**: See [Data Migration Guide](docs/user-guides/data-migration-guide.md)
-2. **Model Migration**: See [Model Migration Guide](docs/user-guides/model-migration-guide.md)
-3. **Operational Runbooks**: See [runbooks/](docs/runbooks/)
-4. **Development Workflow**: See [Development Workflow Guide](docs/user-guides/development-workflow-guide.md)
+1. **Infrastructure Setup**: Deploy EKS platform with `../emr-spark-rapids/terraform-deploy.sh`
+2. **Data Upload**: Use `../emr-spark-rapids/upload-sample-data.sh` for sample datasets
+3. **Data Migration**: See [Data Migration Guide](docs/user-guides/data-migration-guide.md)
+4. **Model Migration**: See [Model Migration Guide](docs/user-guides/model-migration-guide.md)
+5. **Operational Runbooks**: See [runbooks/](docs/runbooks/)
+6. **Development Workflow**: See [Development Workflow Guide](docs/user-guides/development-workflow-guide.md)
 
 ## Prerequisites
 

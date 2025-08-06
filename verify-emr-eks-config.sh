@@ -13,7 +13,7 @@ echo
 echo "1. Checking kubectl configuration..."
 if ! kubectl cluster-info &>/dev/null; then
     echo "❌ kubectl is not configured or cluster is not accessible"
-    echo "Please run: aws eks update-kubeconfig --region us-west-2 --name emr-spark-rapids"
+    echo "Please run: aws eks update-kubeconfig --region us-west-2 --name emr-spark-rapids --no-paginate"
     exit 1
 fi
 echo "✅ kubectl is configured and cluster is accessible"

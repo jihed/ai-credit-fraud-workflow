@@ -77,7 +77,7 @@ variable "enable_inference_service" {
 }
 
 variable "enable_sample_data" {
-  description = "Enable sample fraud detection data upload"
+  description = "Enable sample fraud detection data upload via bash script"
   type        = bool
   default     = true
 }

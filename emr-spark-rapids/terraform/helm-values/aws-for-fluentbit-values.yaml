@@ -47,7 +47,7 @@ service:
           Refresh_Interval    10
           Rotate_Wait         30
           storage.type        filesystem
-          Read_from_Head      ${READ_FROM_HEAD}
+          Read_from_Head      Off
 
       [INPUT]
           Name                tail
@@ -59,7 +59,7 @@ service:
           Skip_Long_Lines     On
           Refresh_Interval    10
           storage.type        filesystem
-          Read_from_Head      ${READ_FROM_HEAD}
+          Read_from_Head      Off
 
       [INPUT]
           Name                tail
@@ -71,7 +71,7 @@ service:
           Skip_Long_Lines     On
           Refresh_Interval    10
           storage.type        filesystem
-          Read_from_Head      ${READ_FROM_HEAD}
+          Read_from_Head      Off
 
       [INPUT]
           Name                tail
@@ -83,7 +83,7 @@ service:
           Skip_Long_Lines     On
           Refresh_Interval    10
           storage.type        filesystem
-          Read_from_Head      ${READ_FROM_HEAD}
+          Read_from_Head      Off
 
       [FILTER]
           Name                kubernetes
@@ -126,7 +126,7 @@ service:
           Match               application.emr.*
           region              ${region}
           log_group_name      /aws/eks/${cluster_name}/emr-containers
-          log_stream_prefix   ${HOST_NAME}-
+          log_stream_prefix   $${HOST_NAME}-
           auto_create_group   true
           extra_user_agent    container-insights
 
@@ -135,7 +135,7 @@ service:
           Match               application.ray.*
           region              ${region}
           log_group_name      /aws/eks/${cluster_name}/ray-training
-          log_stream_prefix   ${HOST_NAME}-
+          log_stream_prefix   $${HOST_NAME}-
           auto_create_group   true
           extra_user_agent    container-insights
 
@@ -144,7 +144,7 @@ service:
           Match               application.inference.*
           region              ${region}
           log_group_name      /aws/eks/${cluster_name}/inference-service
-          log_stream_prefix   ${HOST_NAME}-
+          log_stream_prefix   $${HOST_NAME}-
           auto_create_group   true
           extra_user_agent    container-insights
 
@@ -153,7 +153,7 @@ service:
           Match               application.*
           region              ${region}
           log_group_name      /aws/eks/${cluster_name}/application
-          log_stream_prefix   ${HOST_NAME}-
+          log_stream_prefix   $${HOST_NAME}-
           auto_create_group   true
           extra_user_agent    container-insights
 

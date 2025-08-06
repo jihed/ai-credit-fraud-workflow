@@ -23,7 +23,7 @@ output "oidc_provider_arn" {
 
 output "configure_kubectl" {
   description = "Configure kubectl: make sure you're logged in with the correct AWS profile and run the following command to update your kubeconfig"
-  value       = "aws eks --region ${local.region} update-kubeconfig --name ${module.eks.cluster_name}"
+  value       = "aws eks --region ${local.region} update-kubeconfig --name ${module.eks.cluster_name} --no-paginate"
 }
 
 #---------------------------------------------------------------
@@ -71,7 +71,7 @@ output "quick_start_commands" {
 🚀 EMR to EKS Migration Platform - Quick Start Commands
 
 # 1. Configure kubectl access
-${module.eks.cluster_name != "" ? "aws eks --region ${local.region} update-kubeconfig --name ${module.eks.cluster_name}" : ""}
+${module.eks.cluster_name != "" ? "aws eks --region ${local.region} update-kubeconfig --name ${module.eks.cluster_name} --no-paginate" : ""}
 
 # 2. Verify cluster is ready
 kubectl get nodes
@@ -103,10 +103,14 @@ ${var.enable_ray_cluster ? "# Ray: http://localhost:8265" : ""}
 kubectl get nodes -l accelerator=nvidia
 ${var.enable_nvidia_gpu_monitoring ? "kubectl port-forward service/nvidia-dcgm-exporter 9400:9400 -n kube-system &" : ""}
 
-# 9. View sample data in S3
-aws s3 ls s3://${module.s3_bucket.s3_bucket_id}/raw-data/
+# 9. Upload sample fraud detection data (standalone script)
+./upload-sample-data.sh
+# Or: ./test-upload.sh (includes validation)
 
-# 10. Clean up (when done)
+# 10. View sample data in S3
+aws s3 ls s3://${module.s3_bucket.s3_bucket_id}/raw-data/ --no-paginate
+
+# 11. Clean up (when done)
 ./terraform-cleanup.sh
 EOF
 }
@@ -144,7 +148,7 @@ output "emr_on_eks" {
 
 output "amp_workspace_id" {
   description = "The id of amp"
-  value       = aws_prometheus_workspace.amp[0].id
+  value       = var.enable_amazon_prometheus ? aws_prometheus_workspace.amp[0].id : null
 }
 
 output "grafana_secret_name" {

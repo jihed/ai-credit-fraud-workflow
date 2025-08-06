@@ -299,7 +299,7 @@ resource "kubernetes_manifest" "fraud_inference_service_monitor" {
     kind       = "ServiceMonitor"
     metadata = {
       name      = "fraud-inference-metrics"
-      namespace = kubernetes_namespace.ml_team_a[0].metadata[0].name
+      namespace = kubernetes_namespace.ml_team_a.metadata[0].name
       labels = {
         app = "fraud-inference"
       }
@@ -332,7 +332,7 @@ resource "kubernetes_config_map" "ray_monitoring_config" {
   
   metadata {
     name      = "ray-monitoring-config"
-    namespace = kubernetes_namespace.ml_team_a[0].metadata[0].name
+    namespace = kubernetes_namespace.ml_team_a.metadata[0].name
   }
 
   data = {

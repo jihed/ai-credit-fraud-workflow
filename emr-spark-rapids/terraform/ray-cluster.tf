@@ -17,8 +17,6 @@ resource "kubernetes_namespace" "ray_system" {
 }
 
 resource "kubernetes_namespace" "ml_team_a" {
-  count = var.enable_ray_cluster ? 1 : 0
-  
   metadata {
     name = "ml-team-a"
     labels = {
@@ -31,14 +29,14 @@ resource "kubernetes_namespace" "ml_team_a" {
 
 # Ray Cluster Custom Resource
 resource "kubernetes_manifest" "ray_cluster" {
-  count = var.enable_ray_cluster ? 1 : 0
+  count = 0  # Temporarily disabled until Ray operator is ready
   
   manifest = {
     apiVersion = "ray.io/v1alpha1"
     kind       = "RayCluster"
     metadata = {
       name      = "fraud-detection-cluster"
-      namespace = kubernetes_namespace.ml_team_a[0].metadata[0].name
+      namespace = kubernetes_namespace.ml_team_a.metadata[0].name
     }
     spec = {
       rayVersion = "2.9.3"
@@ -138,11 +136,11 @@ resource "kubernetes_manifest" "ray_cluster" {
 
 # Service for Ray head
 resource "kubernetes_service" "ray_head" {
-  count = var.enable_ray_cluster ? 1 : 0
+  count = 0  # Temporarily disabled until Ray operator is ready
   
   metadata {
     name      = "fraud-detection-cluster-head-svc"
-    namespace = kubernetes_namespace.ml_team_a[0].metadata[0].name
+    namespace = kubernetes_namespace.ml_team_a.metadata[0].name
   }
 
   spec {
@@ -175,7 +173,7 @@ resource "kubernetes_config_map" "ray_config" {
   
   metadata {
     name      = "ray-cluster-config"
-    namespace = kubernetes_namespace.ml_team_a[0].metadata[0].name
+    namespace = kubernetes_namespace.ml_team_a.metadata[0].name
   }
 
   data = {

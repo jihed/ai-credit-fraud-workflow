@@ -24,7 +24,7 @@ resource "aws_iam_role" "ebs_csi_driver_role" {
 }
 
 resource "aws_iam_role_policy_attachment" "ebs_csi_driver_policy" {
-  policy_arn = "arn:aws:iam::aws:policy/service-role/Amazon_EBS_CSI_DriverPolicy"
+  policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonEBSCSIDriverPolicy"
   role       = aws_iam_role.ebs_csi_driver_role.name
 }
 
@@ -61,7 +61,7 @@ resource "aws_iam_role" "efs_csi_driver_role" {
 }
 
 resource "aws_iam_role_policy_attachment" "efs_csi_driver_policy" {
-  policy_arn = "arn:aws:iam::aws:policy/service-role/Amazon_EFS_CSI_DriverPolicy"
+  policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonEFSCSIDriverPolicy"
   role       = aws_iam_role.efs_csi_driver_role.name
 }
 
@@ -108,7 +108,7 @@ module "eks_blueprints_addons" {
   #---------------------------------------
   # Kubernetes Add-ons
   #---------------------------------------
-  
+
   #---------------------------------------
   # Metrics Server
   #---------------------------------------
@@ -136,7 +136,7 @@ module "eks_blueprints_addons" {
     }
   }
   karpenter = {
-    chart_version       = "1.0.6"
+    chart_version       = "1.6.0"
     repository_username = data.aws_ecrpublic_authorization_token.token.user_name
     repository_password = data.aws_ecrpublic_authorization_token.token.password
   }
@@ -159,6 +159,7 @@ module "eks_blueprints_addons" {
     values = [templatefile("${path.module}/helm-values/aws-for-fluentbit-values.yaml", {
       cluster_name = module.eks.cluster_name
       region       = local.region
+      account_id   = data.aws_caller_identity.current.account_id
     })]
   }
 
@@ -174,7 +175,7 @@ module "eks_blueprints_addons" {
         amp_irsa            = aws_iam_role.amp_ingest_role[0].arn
         amp_remotewrite_url = "https://aps-workspaces.${local.region}.amazonaws.com/workspaces/${aws_prometheus_workspace.amp[0].id}/api/v1/remote_write"
         amp_url             = "https://aps-workspaces.${local.region}.amazonaws.com/workspaces/${aws_prometheus_workspace.amp[0].id}"
-      }) : templatefile("${path.module}/helm-values/kube-prometheus.yaml", {
+        }) : templatefile("${path.module}/helm-values/kube-prometheus.yaml", {
         grafana_admin_password = data.aws_secretsmanager_secret_version.admin_password_version.secret_string
       })
     ]
@@ -197,7 +198,7 @@ module "eks_blueprints_addons" {
 #---------------------------------------------------------------
 resource "kubernetes_namespace" "nvidia_monitoring" {
   count = var.enable_nvidia_gpu_monitoring ? 1 : 0
-  
+
   metadata {
     name = "nvidia-monitoring"
     labels = {
@@ -352,7 +353,7 @@ resource "kubernetes_manifest" "nvidia_dcgm_service_monitor" {
     kind       = "ServiceMonitor"
     metadata = {
       name      = "nvidia-dcgm-exporter"
-      namespace = "kube-system"
+      namespace = "kube-seystem"
       labels = {
         app = "nvidia-dcgm-exporter"
       }
@@ -395,7 +396,7 @@ resource "kubernetes_namespace" "kubecost" {
 }
 
 resource "helm_release" "kubecost" {
-  count = var.enable_cost_monitoring ? 1 : 0
+  count      = var.enable_cost_monitoring ? 1 : 0
   name       = "kubecost"
   repository = "https://kubecost.github.io/cost-analyzer/"
   chart      = "cost-analyzer"
@@ -489,11 +490,11 @@ resource "kubectl_manifest" "cpu_nodepool" {
 resource "helm_release" "nvidia_gpu_operator" {
   count = var.enable_nvidia_gpu_operator ? 1 : 0
 
-  name       = "nvidia-gpu-operator"
-  repository = "https://helm.ngc.nvidia.com/nvidia"
-  chart      = "gpu-operator"
-  version    = "v23.9.1"
-  namespace  = "nvidia-gpu-operator"
+  name             = "nvidia-gpu-operator"
+  repository       = "https://helm.ngc.nvidia.com/nvidia"
+  chart            = "gpu-operator"
+  version          = "v23.9.1"
+  namespace        = "nvidia-gpu-operator"
   create_namespace = true
 
   values = [templatefile("${path.module}/helm-values/nvidia-operator-values.yaml", {
@@ -507,11 +508,11 @@ resource "helm_release" "nvidia_gpu_operator" {
 resource "helm_release" "nvidia_device_plugin" {
   count = var.enable_nvidia_gpu_operator ? 0 : 1
 
-  name       = "nvidia-device-plugin"
-  repository = "https://nvidia.github.io/k8s-device-plugin"
-  chart      = "nvidia-device-plugin"
-  version    = "0.15.0"
-  namespace  = "nvidia-device-plugin"
+  name             = "nvidia-device-plugin"
+  repository       = "https://nvidia.github.io/k8s-device-plugin"
+  chart            = "nvidia-device-plugin"
+  version          = "0.15.0"
+  namespace        = "nvidia-device-plugin"
   create_namespace = true
 
   values = [templatefile("${path.module}/helm-values/nvidia-device-plugin-values.yaml", {
@@ -525,11 +526,11 @@ resource "helm_release" "nvidia_device_plugin" {
 # KubeRay Operator for Distributed ML Training
 #---------------------------------------------------------------
 resource "helm_release" "kuberay_operator" {
-  name       = "kuberay-operator"
-  repository = "https://ray-project.github.io/kuberay-helm/"
-  chart      = "kuberay-operator"
-  version    = "1.1.0"
-  namespace  = "ray-system"
+  name             = "kuberay-operator"
+  repository       = "https://ray-project.github.io/kuberay-helm/"
+  chart            = "kuberay-operator"
+  version          = "1.1.0"
+  namespace        = "ray-system"
   create_namespace = true
 
   values = [templatefile("${path.module}/helm-values/kuberay-operator-values.yaml", {

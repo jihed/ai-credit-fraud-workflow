@@ -43,7 +43,7 @@ fi
 
 # Verify AWS credentials
 echo -e "${YELLOW}🔐 Verifying AWS credentials...${NC}"
-if ! aws sts get-caller-identity >/dev/null 2>&1; then
+if ! aws sts get-caller-identity --no-paginate >/dev/null 2>&1; then
     echo -e "${RED}❌ AWS credentials not configured${NC}"
     exit 1
 fi
@@ -67,11 +67,11 @@ terraform apply tfplan
 # Wait for EKS cluster to be ready
 echo -e "${YELLOW}⏳ Waiting for EKS cluster to be ready...${NC}"
 CLUSTER_NAME=$(terraform output -raw cluster_name)
-aws eks wait cluster-active --name $CLUSTER_NAME --region $AWS_REGION
+aws eks wait cluster-active --name $CLUSTER_NAME --region $AWS_REGION --no-paginate
 
 # Update kubeconfig
 echo -e "${YELLOW}🔧 Updating kubeconfig...${NC}"
-aws eks update-kubeconfig --region $AWS_REGION --name $CLUSTER_NAME
+aws eks update-kubeconfig --region $AWS_REGION --name $CLUSTER_NAME --no-paginate
 
 # Wait for nodes to be ready
 echo -e "${YELLOW}⏳ Waiting for nodes to be ready...${NC}"

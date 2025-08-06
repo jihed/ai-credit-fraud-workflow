@@ -198,25 +198,25 @@ resource "kubernetes_service_account" "jupyterhub_notebook" {
   depends_on = [module.eks]
 }
 
-# Persistent Volume Claim for shared data
-resource "kubernetes_persistent_volume_claim" "jupyterhub_shared_data" {
-  metadata {
-    name      = "jupyterhub-shared-data"
-    namespace = kubernetes_namespace.jupyterhub.metadata[0].name
-  }
+# Persistent Volume Claim for shared data (temporarily disabled)
+# resource "kubernetes_persistent_volume_claim" "jupyterhub_shared_data" {
+#   metadata {
+#     name      = "jupyterhub-shared-data"
+#     namespace = kubernetes_namespace.jupyterhub.metadata[0].name
+#   }
 
-  spec {
-    access_modes = ["ReadWriteMany"]
-    resources {
-      requests = {
-        storage = "100Gi"
-      }
-    }
-    storage_class_name = "efs-sc"
-  }
+#   spec {
+#     access_modes = ["ReadWriteOnce"]
+#     resources {
+#       requests = {
+#         storage = "100Gi"
+#       }
+#     }
+#     storage_class_name = "gp2"
+#   }
 
-  depends_on = [module.eks]
-}
+#   depends_on = [module.eks]
+# }
 
 # EFS file system for shared storage
 resource "aws_efs_file_system" "jupyterhub_shared" {
@@ -295,9 +295,9 @@ resource "kubernetes_config_map" "notebook_templates" {
   }
 
   data = {
-    "emr-spark-rapids-example.ipynb" = file("${path.module}/notebook-templates/emr-spark-rapids-example.ipynb")
-    "ray-xgboost-training.ipynb"     = file("${path.module}/notebook-templates/ray-xgboost-training.ipynb")
-    "fraud-detection-pipeline.ipynb" = file("${path.module}/notebook-templates/fraud-detection-pipeline.ipynb")
+    "emr-spark-rapids-example.ipynb" = file("${path.module}/../notebook-templates/emr-spark-rapids-example.ipynb")
+    "ray-xgboost-training.ipynb"     = file("${path.module}/../notebook-templates/ray-xgboost-training.ipynb")
+    "fraud-detection-pipeline.ipynb" = file("${path.module}/../notebook-templates/fraud-detection-pipeline.ipynb")
   }
 
   depends_on = [kubernetes_namespace.jupyterhub]

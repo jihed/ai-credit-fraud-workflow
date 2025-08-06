@@ -4,6 +4,7 @@ Deploy a production-ready fraud detection platform on Amazon EKS with NVIDIA RAP
 
 ## 🚀 Quick Start
 
+### For New Infrastructure
 ```bash
 # 1. Clone and setup
 git clone <repository-url> && cd ai-credit-fraud-workflow
@@ -16,6 +17,21 @@ cd emr-spark-rapids && ./terraform-deploy.sh
 
 # 4. Get access information
 terraform output quick_start_commands
+```
+
+### For Existing Infrastructure
+```bash
+# 1. Check what you have
+./check-existing.sh
+
+# 2. Import existing resources
+./terraform-import.sh
+
+# 3. Apply missing components
+terraform apply
+
+# 4. Validate everything
+./terraform-validate.sh
 ```
 
 **That's it!** Everything is automated with Terraform.
@@ -32,7 +48,7 @@ You need:
 sudo apt update && sudo apt install terraform awscli kubectl
 
 # Configure AWS
-aws configure
+aws configure --no-paginate
 ```
 
 ## 🔧 Configuration

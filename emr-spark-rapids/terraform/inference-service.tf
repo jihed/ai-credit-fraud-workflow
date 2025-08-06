@@ -8,7 +8,7 @@ resource "kubernetes_config_map" "inference_config" {
   
   metadata {
     name      = "fraud-inference-config"
-    namespace = kubernetes_namespace.ml_team_a[0].metadata[0].name
+    namespace = kubernetes_namespace.ml_team_a.metadata[0].name
   }
 
   data = {
@@ -115,7 +115,7 @@ resource "kubernetes_deployment" "fraud_inference" {
   
   metadata {
     name      = "fraud-inference"
-    namespace = kubernetes_namespace.ml_team_a[0].metadata[0].name
+    namespace = kubernetes_namespace.ml_team_a.metadata[0].name
     labels = {
       app     = "fraud-inference"
       version = var.fraud_detection_model_version
@@ -238,7 +238,7 @@ resource "kubernetes_service" "fraud_inference" {
   
   metadata {
     name      = "fraud-inference"
-    namespace = kubernetes_namespace.ml_team_a[0].metadata[0].name
+    namespace = kubernetes_namespace.ml_team_a.metadata[0].name
     labels = {
       app = "fraud-inference"
     }
@@ -271,7 +271,7 @@ resource "kubernetes_horizontal_pod_autoscaler_v2" "fraud_inference_hpa" {
   
   metadata {
     name      = "fraud-inference-hpa"
-    namespace = kubernetes_namespace.ml_team_a[0].metadata[0].name
+    namespace = kubernetes_namespace.ml_team_a.metadata[0].name
   }
 
   spec {

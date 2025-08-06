@@ -51,7 +51,7 @@ terraform plan
 terraform apply -auto-approve
 
 # Get cluster credentials
-aws eks update-kubeconfig --region $AWS_REGION --name $EKS_CLUSTER_NAME
+aws eks update-kubeconfig --region $AWS_REGION --name $EKS_CLUSTER_NAME --no-paginate
 ```
 
 ### 1.2 Verify Infrastructure Deployment
@@ -62,7 +62,7 @@ kubectl get nodes
 kubectl get namespaces
 
 # Verify EMR virtual clusters
-aws emr-containers list-virtual-clusters --region $AWS_REGION
+aws emr-containers list-virtual-clusters --region $AWS_REGION --no-paginate
 
 # Check Karpenter deployment
 kubectl get deployment karpenter -n karpenter
@@ -102,7 +102,7 @@ cd ../../inference-service
 docker build -t $ECR_REGISTRY/fraud-inference:latest .
 
 # Push images to ECR
-aws ecr get-login-password --region $AWS_REGION | docker login --username AWS --password-stdin $ECR_REGISTRY
+aws ecr get-login-password --region $AWS_REGION --no-paginate | docker login --username AWS --password-stdin $ECR_REGISTRY
 docker push $ECR_REGISTRY/spark-rapids:latest
 docker push $ECR_REGISTRY/fraud-inference:latest
 ```
@@ -121,7 +121,7 @@ metadata:
   name: fraud-inference-sa
   namespace: ml-team-a
   annotations:
-    eks.amazonaws.com/role-arn: arn:aws:iam::$(aws sts get-caller-identity --query Account --output text):role/EMRContainers-JobExecutionRole
+    eks.amazonaws.com/role-arn: arn:aws:iam::$(aws sts get-caller-identity --query Account --output text --no-paginate):role/EMRContainers-JobExecutionRole
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
@@ -228,13 +228,13 @@ python migration/scripts/data-migration/emr-to-emr-on-eks.py \
 aws emr-containers start-job-run \
   --virtual-cluster-id $VIRTUAL_CLUSTER_ID \
   --name "fraud-detection-test-$(date +%s)" \
-  --execution-role-arn arn:aws:iam::$(aws sts get-caller-identity --query Account --output text):role/EMRContainers-JobExecutionRole \
+  --execution-role-arn arn:aws:iam::$(aws sts get-caller-identity --query Account --output text --no-paginate):role/EMRContainers-JobExecutionRole \
   --release-label emr-6.15.0-latest \
   --job-driver file://migration-manifest.json \
   --configuration-overrides file://emr-eks-config.json
 
 # Monitor job status
-aws emr-containers list-job-runs --virtual-cluster-id $VIRTUAL_CLUSTER_ID
+aws emr-containers list-job-runs --virtual-cluster-id $VIRTUAL_CLUSTER_ID --no-paginate
 ```
 
 ## Phase 4: Model Migration
@@ -370,10 +370,10 @@ If critical issues are encountered:
 2. **Revert Data Processing**
    ```bash
    # Stop EMR on EKS jobs
-   aws emr-containers cancel-job-run --virtual-cluster-id $VIRTUAL_CLUSTER_ID --id $JOB_RUN_ID
+   aws emr-containers cancel-job-run --virtual-cluster-id $VIRTUAL_CLUSTER_ID --id $JOB_RUN_ID --no-paginate
    
    # Restart original EMR cluster if needed
-   aws emr start-job-flow --name "Emergency-Rollback-Cluster" --instances file://original-cluster-config.json
+   aws emr start-job-flow --name "Emergency-Rollback-Cluster" --instances file://original-cluster-config.json --no-paginate
    ```
 
 3. **Revert Model Serving**
@@ -382,7 +382,7 @@ If critical issues are encountered:
    kubectl scale deployment fraud-inference --replicas=0 -n ml-team-a
    
    # Reactivate SageMaker endpoint
-   aws sagemaker update-endpoint --endpoint-name fraud-detection-endpoint --endpoint-config-name original-config
+   aws sagemaker update-endpoint --endpoint-name fraud-detection-endpoint --endpoint-config-name original-config --no-paginate
    ```
 
 ### Planned Rollback

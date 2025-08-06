@@ -61,7 +61,7 @@ fi
 echo -e "${YELLOW}🔐 Verifying cluster connection...${NC}"
 if ! kubectl cluster-info >/dev/null 2>&1; then
     echo -e "${RED}❌ Cannot connect to Kubernetes cluster${NC}"
-    echo -e "${YELLOW}💡 Make sure to run: aws eks update-kubeconfig --region <region> --name <cluster-name>${NC}"
+    echo -e "${YELLOW}💡 Make sure to run: aws eks update-kubeconfig --region <region> --name <cluster-name> --no-paginate${NC}"
     exit 1
 fi
 
@@ -217,7 +217,7 @@ if command_exists terraform; then
     if [ -n "$S3_BUCKET" ]; then
         echo -e "${GREEN}✅ S3 bucket: $S3_BUCKET${NC}"
         if command_exists aws; then
-            aws s3 ls "s3://$S3_BUCKET" >/dev/null 2>&1 && echo -e "${GREEN}✅ S3 bucket is accessible${NC}" || echo -e "${YELLOW}⚠️ S3 bucket access check failed${NC}"
+            aws s3 ls "s3://$S3_BUCKET" --no-paginate >/dev/null 2>&1 && echo -e "${GREEN}✅ S3 bucket is accessible${NC}" || echo -e "${YELLOW}⚠️ S3 bucket access check failed${NC}"
         fi
     else
         echo -e "${YELLOW}⚠️ S3 bucket information not available${NC}"
