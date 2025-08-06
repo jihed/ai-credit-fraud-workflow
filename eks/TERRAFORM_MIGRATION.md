@@ -6,7 +6,7 @@ This document describes the reorganization of Terraform files into a dedicated d
 
 ### Directory Structure
 ```
-emr-spark-rapids/
+eks/
 ├── terraform/                 # 🆕 All Terraform infrastructure code
 │   ├── .terraform/           # Terraform state and provider cache
 │   ├── helm-values/          # Moved from root

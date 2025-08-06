@@ -5,7 +5,7 @@ A complete infrastructure platform for migrating from EMR to EKS with GPU accele
 ## 📁 Project Structure
 
 ```
-emr-spark-rapids/
+eks/
 ├── terraform/                 # All Terraform infrastructure code
 │   ├── *.tf                  # Terraform configuration files
 │   ├── terraform.tfvars      # Configuration variables

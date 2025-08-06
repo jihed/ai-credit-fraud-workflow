@@ -50,14 +50,14 @@ Use the provided `upload-sample-data.sh` script to automatically download and up
 #### Quick Setup:
 ```bash
 # Deploy complete platform
-cd emr-spark-rapids
-./terraform-deploy.sh
+cd eks
+./deploy.sh
 
 # Upload sample data
 ./upload-sample-data.sh
 
 # Validate deployment
-./terraform-validate.sh
+./validate.sh
 ```
 
 #### Key Features:
@@ -127,5 +127,5 @@ NVIDIA RAPIDS, integrated with AWS, transforms fraud detection pipelines by deli
 - **Improved Developer Experience**: JupyterHub, monitoring, and GitOps
 - **Production Ready**: Comprehensive monitoring, alerting, and cost optimization
 
-**Ready to migrate your pipeline?** Explore the complete EMR to EKS migration platform in the `emr-spark-rapids/` directory.
+**Ready to migrate your pipeline?** Explore the complete EMR to EKS migration platform in the `eks/` directory.
 
