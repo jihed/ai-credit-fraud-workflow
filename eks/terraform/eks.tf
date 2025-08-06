@@ -113,7 +113,7 @@ module "eks" {
     core_node_group = {
       name        = "core-node-group"
       description = "Core managed node group for system components"
-      
+
       # Use secondary CIDR subnets for nodes
       subnet_ids = module.vpc.intra_subnets
 
@@ -124,9 +124,9 @@ module "eks" {
       instance_types = ["m5.xlarge"]
 
       labels = {
-        WorkerType                   = "ON_DEMAND"
-        NodeGroupType               = "core"
-        "karpenter.sh/discovery"    = local.name
+        WorkerType               = "ON_DEMAND"
+        NodeGroupType            = "core"
+        "karpenter.sh/discovery" = local.name
       }
 
       taints = [
@@ -150,7 +150,7 @@ module "eks" {
 # Pod Identity Association for VPC CNI
 #---------------------------------------------------------------
 resource "aws_iam_role" "vpc_cni_pod_identity_role" {
-  name_prefix = "${local.name}-vpc-cni-pod-identity-"
+  name_prefix = "${local.name}-vpc-cni-"
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
@@ -168,11 +168,14 @@ resource "aws_iam_role" "vpc_cni_pod_identity_role" {
     ]
   })
 
-  managed_policy_arns = [
-    "arn:aws:iam::aws:policy/AmazonEKS_CNI_Policy"
-  ]
+
 
   tags = local.tags
+}
+
+resource "aws_iam_role_policy_attachment" "vpc_cni_pod_identity_policy" {
+  policy_arn = "arn:aws:iam::aws:policy/AmazonEKS_CNI_Policy"
+  role       = aws_iam_role.vpc_cni_pod_identity_role.name
 }
 
 resource "aws_eks_pod_identity_association" "vpc_cni" {
@@ -188,7 +191,7 @@ resource "aws_eks_pod_identity_association" "vpc_cni" {
 # Pod Identity Association for EBS CSI Driver
 #---------------------------------------------------------------
 resource "aws_iam_role" "ebs_csi_pod_identity_role" {
-  name_prefix = "${local.name}-ebs-csi-pod-identity-"
+  name_prefix = "${local.name}-ebs-csi-"
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
@@ -206,11 +209,12 @@ resource "aws_iam_role" "ebs_csi_pod_identity_role" {
     ]
   })
 
-  managed_policy_arns = [
-    "arn:aws:iam::aws:policy/service-role/AmazonEBSCSIDriverPolicy"
-  ]
-
   tags = local.tags
+}
+
+resource "aws_iam_role_policy_attachment" "ebs_csi_pod_identity_policy" {
+  policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonEBSCSIDriverPolicy"
+  role       = aws_iam_role.ebs_csi_pod_identity_role.name
 }
 
 resource "aws_eks_pod_identity_association" "ebs_csi" {
@@ -221,6 +225,7 @@ resource "aws_eks_pod_identity_association" "ebs_csi" {
 
   depends_on = [module.eks]
 }
+
 
 #---------------------------------------------------------------
 # EKS Blueprints Addons
