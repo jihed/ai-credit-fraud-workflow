@@ -20,12 +20,6 @@ enable_nvidia_gpu_operator = true
 enable_amazon_prometheus   = false
 enable_vpc_endpoints        = false
 
-# JARK Stack Configuration
-enable_jupyterhub              = true
-enable_kuberay_operator        = true
-enable_argo_workflows          = true
-enable_kube_prometheus_stack   = true
-
 # Tags
 tags = {
   Environment = "demo"

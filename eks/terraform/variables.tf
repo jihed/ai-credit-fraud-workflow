@@ -76,30 +76,7 @@ variable "enable_vpc_endpoints" {
   default     = false
 }
 
-# JARK Stack Components
-variable "enable_jupyterhub" {
-  description = "Enable JupyterHub for unified notebook experience"
-  type        = bool
-  default     = true
-}
 
-variable "enable_kuberay_operator" {
-  description = "Enable Ray Operator for distributed ML"
-  type        = bool
-  default     = true
-}
-
-variable "enable_argo_workflows" {
-  description = "Enable Argo Workflows for ML pipeline orchestration"
-  type        = bool
-  default     = true
-}
-
-variable "enable_kube_prometheus_stack" {
-  description = "Enable Prometheus and Grafana monitoring stack"
-  type        = bool
-  default     = true
-}
 
 variable "kms_key_admin_roles" {
   description = "List of role ARNs to add to the KMS policy"
