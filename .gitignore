@@ -1,0 +1,345 @@
+# Terraform
+*.tfstate
+*.tfstate.*
+*.tfvars
+!*.tfvars.example
+.terraform/
+.terraform.lock.hcl
+terraform.tfplan
+tfplan
+crash.log
+crash.*.log
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+.terraformrc
+terraform.rc
+
+# Docker
+.dockerignore
+Dockerfile.local
+docker-compose.override.yml
+.docker/
+
+# AWS
+.aws/
+aws-exports.js
+amplify-build-config.json
+amplify-gradle-config.json
+amplifytools.xcconfig
+
+# Kubernetes
+kubeconfig
+*.kubeconfig
+.kube/
+
+# IDE and Editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+pip-wheel-metadata/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+*.manifest
+*.spec
+pip-log.txt
+pip-delete-this-directory.txt
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
+.pytest_cache/
+.python-version
+.pyenv
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# Jupyter Notebook
+.ipynb_checkpoints
+*/.ipynb_checkpoints/*
+profile_default/
+ipython_config.py
+
+# Node.js (if using any JS tools)
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+lerna-debug.log*
+.pnpm-debug.log*
+.npm
+.eslintcache
+.stylelintcache
+.rpt2_cache/
+.rts2_cache_cjs/
+.rts2_cache_es/
+.rts2_cache_umd/
+.node_repl_history
+*.tgz
+*.tar.gz
+
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+lerna-debug.log*
+.pnpm-debug.log*
+
+# Runtime data
+pids
+*.pid
+*.seed
+*.pid.lock
+
+# Coverage directory used by tools like istanbul
+coverage/
+*.lcov
+
+# nyc test coverage
+.nyc_output
+
+# Dependency directories
+jspm_packages/
+
+# Optional npm cache directory
+.npm
+
+# Optional eslint cache
+.eslintcache
+
+# Optional stylelint cache
+.stylelintcache
+
+# Microbundle cache
+.rpt2_cache/
+.rts2_cache_cjs/
+.rts2_cache_es/
+.rts2_cache_umd/
+
+# Optional REPL history
+.node_repl_history
+
+# Output of 'npm pack'
+*.tgz
+
+# Yarn Integrity file
+.yarn-integrity
+
+# dotenv environment variable files
+.env
+.env.development.local
+.env.test.local
+.env.production.local
+.env.local
+
+# parcel-bundler cache (https://parceljs.org/)
+.cache
+.parcel-cache
+
+# Next.js build output
+.next
+
+# Nuxt.js build / generate output
+.nuxt
+dist
+
+# Gatsby files
+.cache/
+public
+
+# Storybook build outputs
+.out
+.storybook-out
+storybook-static
+
+# Temporary folders
+tmp/
+temp/
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Backup files
+*.bak
+*.backup
+*.old
+*.orig
+
+# Compressed files
+*.7z
+*.dmg
+*.gz
+*.iso
+*.jar
+*.rar
+*.tar
+*.zip
+
+# Application specific
+# EMR and Spark logs
+spark-warehouse/
+metastore_db/
+derby.log
+
+# Ray logs and temp files
+/tmp/ray/
+ray_results/
+~/ray_results/
+
+# Argo Workflows
+argo-workflows-*.yaml
+
+# JupyterHub
+jupyterhub_cookie_secret
+jupyterhub.sqlite
+jupyterhub_config.py.bak
+
+# SSL certificates and keys
+*.pem
+*.key
+*.crt
+*.csr
+*.p12
+*.pfx
+
+# Secrets and sensitive data
+secrets/
+*.secret
+*secret*
+*password*
+*credentials*
+
+# Local development
+.local/
+local/
+dev/
+development/
+
+# Test files
+test-results/
+test-output/
+coverage-reports/
+
+# Build artifacts
+build/
+dist/
+target/
+out/
+
+# Package files
+*.deb
+*.rpm
+*.msi
+*.pkg
+*.dmg
+
+# Database files
+*.db
+*.sqlite
+*.sqlite3
+
+# Configuration files with sensitive data
+config.json
+config.yaml
+config.yml
+settings.json
+settings.yaml
+settings.yml
+
+# Helm charts
+charts/*/charts/
+charts/*/requirements.lock
+
+# Kustomize
+kustomization.yaml.bak
+
+# Temporary Kubernetes manifests
+k8s-temp/
+manifests-temp/
+
+# Local scripts
+local-*.sh
+dev-*.sh
+test-*.sh
+
+# Documentation build
+docs/_build/
+site/
+
+# IDE workspace files
+*.code-workspace
+.vscode/settings.json
+.vscode/tasks.json
+.vscode/launch.json
+.vscode/extensions.json
+
+# JetBrains IDEs
+.idea/
+*.iml
+*.ipr
+*.iws
+out/
+
+# Vim
+*.swp
+*.swo
+*~
+
+# Emacs
+*~
+\#*\#
+/.emacs.desktop
+/.emacs.desktop.lock
+*.elc
+auto-save-list
+tramp
+.\#*
+
+# Project specific ignores
+# Add any project-specific files or directories here
