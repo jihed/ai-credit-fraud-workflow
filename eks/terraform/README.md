@@ -281,10 +281,11 @@ For issues related to:
 
 After successful deployment:
 
-1. Upload your fraud detection notebooks to the S3 bucket
-2. Adapt the existing EMR notebooks for EMR on EKS
-3. Submit test jobs to validate GPU acceleration
-4. Set up monitoring and alerting for production use
+1. Deploy ML Stack applications: `cd ../helm && ./scripts/deploy-applications.sh`
+2. Upload your fraud detection notebooks to the S3 bucket
+3. Adapt the existing EMR notebooks for EMR on EKS
+4. Submit test jobs to validate GPU acceleration
+5. Set up monitoring and alerting for production use
 
 ## Architecture Diagram
 

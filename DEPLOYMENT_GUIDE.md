@@ -103,14 +103,14 @@ Infrastructure via Terraform, critical apps via GitOps, dev apps via Helm
 
 ### Phase 2A: Application Deployment (Helm)
 
-1. **Deploy Applications**:
+1. **Deploy ML Stack Applications**:
    ```bash
-   cd ../helm
+   cd eks/helm
    
    # Add Helm repositories
    ./scripts/add-helm-repos.sh
    
-   # Deploy all applications
+   # Deploy all ML Stack applications
    ./scripts/deploy-applications.sh
    ```
 
@@ -127,7 +127,7 @@ Infrastructure via Terraform, critical apps via GitOps, dev apps via Helm
 
 1. **Install ArgoCD**:
    ```bash
-   cd ../gitops
+   cd ../../gitops
    
    # Install ArgoCD
    ./scripts/install-argocd.sh
@@ -181,9 +181,11 @@ tags = {
 ### Application Configuration
 
 #### Helm Values
-Edit files in `helm/values/`:
+Edit files in `eks/helm/values/`:
 - `jupyterhub-values.yaml`: JupyterHub configuration
 - `ray-values.yaml`: Ray cluster configuration
+- `argo-values.yaml`: Argo Workflows configuration
+- `grafana-values.yaml`: Grafana monitoring configuration
 
 #### GitOps Configuration
 Edit ArgoCD applications in `gitops/applications/`:
@@ -200,7 +202,7 @@ tags = {
   Environment = "dev"
 }
 
-# helm/values/ray-values.yaml
+# eks/helm/values/ray-values.yaml
 worker:
   replicas: 1
   minReplicas: 0
@@ -214,7 +216,7 @@ worker:
 enable_amazon_prometheus = true
 enable_vpc_endpoints     = true
 
-# helm/values/jupyterhub-values.yaml
+# eks/helm/values/jupyterhub-values.yaml
 hub:
   config:
     JupyterHub:

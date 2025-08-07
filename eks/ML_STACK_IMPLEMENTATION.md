@@ -1,8 +1,8 @@
-# JARK Stack Implementation for Fraud Detection
+# ML Stack Implementation for Fraud Detection
 
 ## 🎯 Implementation Summary
 
-We have successfully implemented a **hybrid approach** that combines the proven data-on-eks EMR blueprint with the modern JARK stack (JupyterHub, Argo Workflows, Ray, Karpenter) for fraud detection workloads.
+We have successfully implemented a **hybrid approach** that combines the proven data-on-eks EMR blueprint with the modern ML Stack (JupyterHub, Argo Workflows, Ray, Karpenter) for fraud detection workloads. The implementation uses **Terraform for infrastructure** and **Helm charts with bash scripts for application deployment**.
 
 ## 🏗️ Architecture Components
 
@@ -13,7 +13,7 @@ We have successfully implemented a **hybrid approach** that combines the proven 
 ✅ **NVIDIA GPU Operator** for GPU acceleration
 ✅ **VPC & Networking** optimized for data workloads
 
-### JARK Stack Components (newly added)
+### ML Stack Components (deployed via Helm)
 ✅ **JupyterHub** with fraud detection notebook profiles
 ✅ **Ray Operator** for distributed ML training and serving
 ✅ **Argo Workflows** for ML pipeline orchestration
@@ -23,20 +23,28 @@ We have successfully implemented a **hybrid approach** that combines the proven 
 
 ```
 eks/
-├── terraform/
+├── terraform/              # Infrastructure Layer (Terraform)
 │   ├── main.tf              # Core Terraform configuration
-│   ├── variables.tf         # Variables including JARK stack options
-│   ├── eks.tf              # EKS cluster with JARK stack add-ons
-│   ├── ray.tf              # Ray cluster configuration
-│   ├── argo.tf             # Argo Workflows setup
+│   ├── variables.tf         # Infrastructure variables
+│   ├── eks.tf              # EKS cluster configuration
 │   ├── emr.tf              # EMR on EKS virtual cluster
 │   ├── karpenter.tf        # Karpenter NodePools (CPU + GPU)
 │   ├── vpc.tf              # VPC and networking
 │   ├── storage.tf          # Storage classes
 │   ├── outputs.tf          # Service URLs and access info
-│   ├── deploy.sh           # Enhanced deployment script
+│   ├── deploy.sh           # Infrastructure deployment script
 │   ├── cleanup.sh          # Complete cleanup script
-│   └── README.md           # Updated documentation
+│   └── README.md           # Infrastructure documentation
+├── helm/                   # Application Layer (Helm Charts)
+│   ├── values/             # Helm values for each service
+│   │   ├── jupyterhub-values.yaml
+│   │   ├── ray-values.yaml
+│   │   ├── argo-values.yaml
+│   │   └── grafana-values.yaml
+│   ├── scripts/            # Deployment scripts
+│   │   ├── add-helm-repos.sh
+│   │   └── deploy-applications.sh
+│   └── README.md           # Application deployment guide
 ├── docker/
 │   ├── emr-spark-rapids/   # EMR + RAPIDS notebook image
 │   ├── ray-ml/             # Ray ML training image
@@ -44,12 +52,12 @@ eks/
 │   ├── notebooks/          # Sample fraud detection notebooks
 │   └── build-images.sh     # Docker build and push script
 ├── blueprint-analysis.md   # Data-on-EKS blueprint analysis
-└── JARK_STACK_IMPLEMENTATION.md  # This file
+└── ML_STACK_IMPLEMENTATION.md  # This file
 ```
 
 ## 🚀 Deployment Process
 
-### 1. Infrastructure Deployment
+### 1. Infrastructure Deployment (Terraform)
 ```bash
 cd eks/terraform
 cp terraform.tfvars.example terraform.tfvars
@@ -57,13 +65,23 @@ cp terraform.tfvars.example terraform.tfvars
 ./deploy.sh
 ```
 
-### 2. Build and Push Notebook Images
+### 2. ML Stack Application Deployment (Helm)
+```bash
+cd ../helm
+# Add Helm repositories
+./scripts/add-helm-repos.sh
+
+# Deploy all ML Stack applications
+./scripts/deploy-applications.sh
+```
+
+### 3. Build and Push Notebook Images (Optional)
 ```bash
 cd ../docker
 ./build-images.sh
 ```
 
-### 3. Access Services
+### 4. Access Services
 - **JupyterHub**: Multi-user notebooks with fraud detection profiles
 - **Ray Dashboard**: Monitor distributed computing jobs
 - **Argo Workflows**: ML pipeline orchestration UI
@@ -167,14 +185,30 @@ class FraudDetectionModel:
 
 ## 🎛️ Configuration Options
 
-### Enable/Disable Components
+### Infrastructure Configuration (Terraform)
 ```hcl
 # In terraform.tfvars
-enable_jupyterhub              = true   # Notebook environment
-enable_kuberay_operator        = true   # Distributed ML
-enable_argo_workflows          = true   # Pipeline orchestration
-enable_kube_prometheus_stack   = true   # Monitoring
-enable_nvidia_gpu_operator     = true   # GPU support
+enable_nvidia_gpu_operator     = true   # GPU support for RAPIDS
+```
+
+### Application Configuration (Helm Values)
+```yaml
+# In helm/values/jupyterhub-values.yaml
+hub:
+  config:
+    JupyterHub:
+      admin_access: true
+
+# In helm/values/ray-values.yaml
+worker:
+  replicas: 2
+  minReplicas: 0
+  maxReplicas: 10
+
+# In helm/values/argo-values.yaml
+server:
+  service:
+    type: LoadBalancer
 ```
 
 ### Resource Scaling
@@ -262,12 +296,27 @@ argo list -n argo-workflows
 
 ## 🏆 Success Metrics
 
-The hybrid JARK stack implementation provides:
+The hybrid ML Stack implementation provides:
 
 - **🚀 Faster Development**: Unified notebook environment reduces context switching
 - **📈 Better Scalability**: Ray + Karpenter handle varying workload demands
 - **🔧 Easier Operations**: Kubernetes-native tools for all ML operations
 - **💰 Cost Efficiency**: Intelligent autoscaling and spot instance usage
 - **🔒 Enhanced Security**: IRSA-based authentication throughout the stack
+- **🎯 Separation of Concerns**: Infrastructure (Terraform) and Applications (Helm) are clearly separated
 
-This implementation successfully combines the stability of the data-on-eks blueprint with the modern capabilities of the JARK stack, creating a powerful platform for fraud detection workloads on Kubernetes.
+## 🏗️ Architecture Benefits
+
+### Infrastructure Layer (Terraform)
+- **Long-lived Resources**: EKS cluster, VPC, IAM roles
+- **Platform Team Ownership**: Managed by DevOps/Platform teams
+- **State Management**: Terraform state for infrastructure consistency
+- **Security Foundation**: IRSA, security groups, encryption
+
+### Application Layer (Helm)
+- **Frequently Updated**: ML applications and configurations
+- **Development Team Ownership**: Managed by Data Science/ML teams
+- **Version Control**: Helm charts with semantic versioning
+- **Environment Flexibility**: Easy configuration per environment
+
+This implementation successfully combines the stability of the data-on-eks blueprint with the modern capabilities of the ML Stack, creating a powerful platform for fraud detection workloads on Kubernetes with clear separation between infrastructure and applications.

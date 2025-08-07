@@ -1,12 +1,12 @@
-# EKS Fraud Detection with JARK Stack
+# EKS Fraud Detection with ML Stack
 
-This directory contains the complete implementation of a fraud detection platform using the JARK stack (JupyterHub, Argo Workflows, Ray, Karpenter) on Amazon EKS.
+This directory contains the complete implementation of a fraud detection platform using the ML Stack (JupyterHub, Argo Workflows, Ray, Karpenter) on Amazon EKS.
 
 ## 🏗️ Architecture
 
 The implementation combines:
 - **Data-on-EKS Foundation**: Proven EMR on EKS infrastructure
-- **JARK Stack**: Modern ML platform capabilities
+- **ML Stack**: Modern ML platform capabilities
 - **GPU Acceleration**: NVIDIA RAPIDS for high-performance computing
 
 ## 📁 Directory Structure
@@ -15,15 +15,18 @@ The implementation combines:
 eks/
 ├── terraform/              # Infrastructure as Code
 │   ├── main.tf             # Core Terraform configuration
-│   ├── eks.tf              # EKS cluster with JARK stack
-│   ├── ray.tf              # Ray cluster configuration
-│   ├── argo.tf             # Argo Workflows setup
+│   ├── eks.tf              # EKS cluster with ML stack
 │   ├── emr.tf              # EMR on EKS virtual cluster
 │   ├── karpenter.tf        # Auto-scaling node pools
 │   ├── vpc.tf              # VPC and networking
 │   ├── deploy.sh           # Deployment script
 │   ├── cleanup.sh          # Cleanup script
 │   └── README.md           # Detailed infrastructure docs
+├── helm/                   # ML Stack applications
+│   ├── values/             # Helm values for each service
+│   ├── charts/             # Custom Helm charts
+│   ├── scripts/            # Deployment scripts
+│   └── README.md           # Application deployment guide
 ├── docker/                 # Container images
 │   ├── emr-spark-rapids/   # EMR + RAPIDS notebook
 │   ├── ray-ml/             # Ray ML training notebook
@@ -32,7 +35,7 @@ eks/
 │   └── build-images.sh     # Docker build script
 ├── blueprint-analysis.md   # Data-on-EKS blueprint analysis
 ├── POD_IDENTITY_MIGRATION.md  # Pod Identity implementation guide
-└── JARK_STACK_IMPLEMENTATION.md  # Complete implementation guide
+└── ML_STACK_IMPLEMENTATION.md  # Complete implementation guide
 ```
 
 ## 🚀 Quick Start
@@ -45,13 +48,19 @@ cp terraform.tfvars.example terraform.tfvars
 ./deploy.sh
 ```
 
-### 2. Build Notebook Images
+### 2. Deploy ML Stack Applications
+```bash
+cd ../helm
+./scripts/deploy-applications.sh
+```
+
+### 3. Build Notebook Images
 ```bash
 cd ../docker
 ./build-images.sh
 ```
 
-### 3. Access Services
+### 4. Access Services
 After deployment, you'll have access to:
 
 - **JupyterHub**: Multi-user notebook environment
@@ -98,7 +107,7 @@ After deployment, you'll have access to:
 Key configuration options in `terraform.tfvars`:
 
 ```hcl
-# JARK Stack Components
+# ML Stack Components
 enable_jupyterhub              = true
 enable_kuberay_operator        = true
 enable_argo_workflows          = true
@@ -131,7 +140,7 @@ cd terraform
 ## 📚 Documentation
 
 - **[Terraform README](terraform/README.md)**: Detailed infrastructure documentation
-- **[JARK Implementation Guide](JARK_STACK_IMPLEMENTATION.md)**: Complete implementation details
+- **[ML Stack Implementation Guide](ML_STACK_IMPLEMENTATION.md)**: Complete implementation details
 - **[Pod Identity Migration](POD_IDENTITY_MIGRATION.md)**: EKS Pod Identity implementation
 - **[Blueprint Analysis](blueprint-analysis.md)**: Data-on-EKS blueprint analysis
 
@@ -143,4 +152,4 @@ cd terraform
 - **💰 Cost Optimized**: Spot instances and dynamic scaling
 - **🔒 Secure**: IRSA-based authentication throughout
 
-This implementation provides a complete, production-ready fraud detection platform that combines the stability of EMR on EKS with the modern capabilities of the JARK stack.
+This implementation provides a complete, production-ready fraud detection platform that combines the stability of EMR on EKS with the modern capabilities of the ML Stack.
