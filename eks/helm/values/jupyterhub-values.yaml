@@ -2,6 +2,10 @@
 # This configuration provides different notebook profiles for various workloads
 
 hub:
+  # Disable persistent storage for demo
+  db:
+    type: sqlite-memory
+  
   config:
     JupyterHub:
       authenticator_class: 'jupyterhub.auth.DummyAuthenticator'  # For demo only
@@ -13,14 +17,14 @@ hub:
       
   extraEnv:
     # EMR on EKS configuration
-    VIRTUAL_CLUSTER_ID: ''  # Will be populated from Terraform output
-    EMR_EXECUTION_ROLE_ARN: ''  # Will be populated from Terraform output
+    VIRTUAL_CLUSTER_ID: '6rt5ikzzpmyu1u2vp6rqqhmd1'  # Will be populated from Terraform output
+    EMR_EXECUTION_ROLE_ARN: 'arn:aws:iam::368083780519:role/fraud-detection-emr-eks-emr-execution-20250806151622744200000001'  # Will be populated from Terraform output
     
     # Ray cluster configuration
     RAY_CLUSTER_ADDRESS: 'ray://ray-cluster-head-svc.ray-system.svc.cluster.local:10001'
     
     # S3 bucket for data
-    S3_BUCKET_NAME: ''  # Will be populated from Terraform output
+    S3_BUCKET_NAME: 'fraud-detection-emr-eks-emr-20250806141826624700000005'  # Will be populated from Terraform output
 
   service:
     type: LoadBalancer
@@ -37,13 +41,10 @@ singleuser:
     limit: 4G
     guarantee: 2G
   
-  # Storage for user notebooks
+  # Storage for user notebooks (using emptyDir for demo)
   storage:
-    type: dynamic
-    capacity: 10Gi
+    type: none
     homeMountPath: /home/jovyan
-    dynamic:
-      storageClass: gp3
   
   # Service account with IRSA for S3 access
   serviceAccountName: jupyterhub-user-sa
@@ -62,8 +63,8 @@ singleuser:
         environment:
           SPARK_DRIVER_MEMORY: '4g'
           SPARK_EXECUTOR_MEMORY: '4g'
-          VIRTUAL_CLUSTER_ID: ''  # Populated from environment
-          EMR_EXECUTION_ROLE_ARN: ''  # Populated from environment
+          VIRTUAL_CLUSTER_ID: '6rt5ikzzpmyu1u2vp6rqqhmd1'  # Populated from environment
+          EMR_EXECUTION_ROLE_ARN: 'arn:aws:iam::368083780519:role/fraud-detection-emr-eks-emr-execution-20250806151622744200000001'  # Populated from environment
           
     - display_name: "Fraud Detection - ML Training"
       description: "Ray + XGBoost for distributed training (8 CPU, 16GB RAM)"
@@ -105,8 +106,8 @@ singleuser:
         mem_limit: '32G'
         mem_guarantee: '16G'
         environment:
-          VIRTUAL_CLUSTER_ID: ''  # Populated from environment
-          EMR_EXECUTION_ROLE_ARN: ''  # Populated from environment
+          VIRTUAL_CLUSTER_ID: '6rt5ikzzpmyu1u2vp6rqqhmd1'  # Populated from environment
+          EMR_EXECUTION_ROLE_ARN: 'arn:aws:iam::368083780519:role/fraud-detection-emr-eks-emr-execution-20250806151622744200000001'  # Populated from environment
           RAY_ADDRESS: 'ray://ray-cluster-head-svc.ray-system.svc.cluster.local:10001'
 
   # Network policy for security
@@ -153,8 +154,5 @@ cull:
   users: false   # Don't cull named servers
   maxAge: 0      # Don't cull based on age
 
-# Resource quotas
-quotas:
-  enabled: true
-  cpu: 100       # Total CPU limit for all user pods
-  memory: 200Gi  # Total memory limit for all user pods
+# Resource quotas should be managed via Kubernetes ResourceQuota objects
+# See: https://kubernetes.io/docs/concepts/policy/resource-quotas/

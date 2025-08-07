@@ -121,6 +121,25 @@ deploy_jupyterhub() {
     fi
 }
 
+# Deploy KubeRay operator
+deploy_kuberay_operator() {
+    print_status "Deploying KubeRay operator..."
+    
+    helm install kuberay-operator kuberay/kuberay-operator \
+        --namespace kuberay-operator \
+        --create-namespace \
+        --version 1.2.2 \
+        --wait \
+        --timeout 5m
+    
+    if [ $? -eq 0 ]; then
+        print_status "KubeRay operator deployed successfully!"
+    else
+        print_error "KubeRay operator deployment failed!"
+        exit 1
+    fi
+}
+
 # Deploy Ray cluster
 deploy_ray() {
     print_status "Deploying Ray cluster..."
@@ -197,6 +216,7 @@ main() {
     get_terraform_outputs
     create_service_accounts
     deploy_jupyterhub
+    deploy_kuberay_operator
     deploy_ray
     verify_deployments
     

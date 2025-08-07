@@ -49,16 +49,9 @@ head:
         protocol: TCP
         targetPort: 8078
   
-  # Node selector for head node (prefer system nodes)
+  # Node selector for head node (use CPU-optimized nodes)
   nodeSelector:
-    NodeGroupType: system
-  
-  # Tolerations for system nodes
-  tolerations:
-    - key: system
-      operator: Equal
-      value: "true"
-      effect: NoSchedule
+    NodeGroupType: SparkCPUOptimized
 
 # Worker node configuration
 worker:
@@ -85,9 +78,9 @@ worker:
       cpu: 4
       memory: 16Gi
   
-  # Node selector for workers (prefer compute-optimized nodes)
+  # Node selector for workers (use CPU-optimized nodes)
   nodeSelector:
-    provisioner: spark-cpu-optimized
+    NodeGroupType: SparkCPUOptimized
   
   # Additional worker groups for different workload types
   additionalWorkerGroups:
@@ -116,7 +109,7 @@ worker:
           nvidia.com/gpu: 1
       
       nodeSelector:
-        provisioner: spark-gpu-rapids
+        NodeGroupType: SparkGPURapids
         nvidia.com/gpu: "true"
       
       tolerations:
@@ -148,7 +141,7 @@ worker:
           memory: 64Gi
       
       nodeSelector:
-        provisioner: spark-memory-optimized
+        NodeGroupType: SparkMemoryOptimized
 
 # Service account configuration
 serviceAccount:

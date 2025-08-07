@@ -13,13 +13,13 @@ echo "✓ Added JupyterHub repository"
 helm repo add kuberay https://ray-project.github.io/kuberay-helm/
 echo "✓ Added KubeRay repository"
 
-# Apache Airflow
-helm repo add apache-airflow https://airflow.apache.org
-echo "✓ Added Apache Airflow repository"
+# # Apache Airflow
+# helm repo add apache-airflow https://airflow.apache.org
+# echo "✓ Added Apache Airflow repository"
 
-# Strimzi (Kafka)
-helm repo add strimzi https://strimzi.io/charts/
-echo "✓ Added Strimzi repository"
+# # Strimzi (Kafka)
+# helm repo add strimzi https://strimzi.io/charts/
+# echo "✓ Added Strimzi repository"
 
 # Update repositories
 echo "Updating Helm repositories..."
@@ -32,5 +32,5 @@ echo ""
 echo "Available charts:"
 echo "- JupyterHub: helm search repo jupyterhub/jupyterhub"
 echo "- Ray Cluster: helm search repo kuberay/ray-cluster"
-echo "- Airflow: helm search repo apache-airflow/airflow"
-echo "- Kafka: helm search repo strimzi/strimzi-kafka-operator"
+# echo "- Airflow: helm search repo apache-airflow/airflow"
+# echo "- Kafka: helm search repo strimzi/strimzi-kafka-operator"
