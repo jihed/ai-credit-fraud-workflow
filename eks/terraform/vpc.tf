@@ -20,13 +20,13 @@ module "vpc" {
 
   # EKS Pod subnets using secondary CIDR (for pod networking only)
   intra_subnets = var.eks_data_plane_subnet_secondary_cidr
-  
+
   # Enable NAT Gateway for private subnets (where EKS nodes run)
-  enable_nat_gateway     = true
-  single_nat_gateway     = true
-  enable_dns_hostnames   = true
-  enable_dns_support     = true
-  
+  enable_nat_gateway   = true
+  single_nat_gateway   = true
+  enable_dns_hostnames = true
+  enable_dns_support   = true
+
   # ------------------------------
   # Optional Public Subnets for NAT and IGW for PoC/Dev/Test environments
   # Public Subnets can be disabled while deploying to Production and use Private NAT + TGW

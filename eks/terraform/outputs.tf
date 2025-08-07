@@ -81,11 +81,11 @@ output "configure_kubectl" {
 }
 
 output "emr_job_submission_example" {
-  description = "Example EMR job submission command"
+  description = "Example EMR on EKS job submission command for ML workloads"
   value = <<-EOT
     aws emr-containers start-job-run \
       --virtual-cluster-id ${aws_emrcontainers_virtual_cluster.fraud_detection.id} \
-      --name "fraud-detection-feature-engineering" \
+      --name "fraud-detection-ml-feature-engineering" \
       --execution-role-arn ${aws_iam_role.emr_execution_role.arn} \
       --release-label emr-7.9.0-latest \
       --job-driver '{
@@ -103,7 +103,7 @@ output "emr_job_submission_example" {
               "spark.executor.memory": "30G",
               "spark.executor.resource.gpu.amount": "1",
               "spark.rapids.sql.enabled": "true",
-              "spark.kubernetes.executor.podNamePrefix": "fraud-detection"
+              "spark.kubernetes.executor.podNamePrefix": "fraud-detection-ml"
             }
           }
         ]
@@ -111,13 +111,73 @@ output "emr_job_submission_example" {
   EOT
 }
 
+# Service URL outputs (placeholders for future ML Stack services)
+output "get_jupyterhub_url" {
+  description = "Command to get JupyterHub URL"
+  value       = "kubectl get svc -n jupyterhub proxy-public -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null || echo 'Service not deployed yet'"
+}
+
+output "get_ray_dashboard_url" {
+  description = "Command to get Ray Dashboard URL"
+  value       = "kubectl get svc -n ray-clusters ray-dashboard-service -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null || echo 'Service not deployed yet'"
+}
+
+output "get_argo_workflows_url" {
+  description = "Command to get Argo Workflows URL"
+  value       = "kubectl get svc -n argo-workflows argo-server -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null || echo 'Service not deployed yet'"
+}
+
+output "get_grafana_url" {
+  description = "Command to get Grafana URL"
+  value       = "kubectl get svc -n kube-prometheus-stack kube-prometheus-stack-grafana -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null || echo 'Service not deployed yet'"
+}
+
+output "argo_workflow_submission_example" {
+  description = "Example Argo workflow submission command"
+  value = <<-EOT
+    # Example Argo workflow for fraud detection ML pipeline
+    kubectl apply -f - <<EOF
+    apiVersion: argoproj.io/v1alpha1
+    kind: Workflow
+    metadata:
+      generateName: fraud-detection-ml-pipeline-
+      namespace: argo-workflows
+    spec:
+      entrypoint: ml-pipeline
+      templates:
+      - name: ml-pipeline
+        steps:
+        - - name: data-preprocessing
+            template: spark-job
+            arguments:
+              parameters:
+              - name: job-name
+                value: "fraud-data-preprocessing"
+        - - name: model-training
+            template: spark-job
+            arguments:
+              parameters:
+              - name: job-name
+                value: "fraud-model-training"
+      - name: spark-job
+        inputs:
+          parameters:
+          - name: job-name
+        container:
+          image: public.ecr.aws/emr-on-eks/spark/emr-7.9.0:latest
+          command: ["/bin/bash"]
+          args: ["-c", "echo 'Running {{inputs.parameters.job-name}}'"]
+    EOF
+  EOT
+}
+
 # Next steps information
 output "next_steps" {
-  description = "Next steps for application deployment"
+  description = "Next steps for ML Stack deployment"
   value = <<-EOT
     Infrastructure deployment complete! Next steps:
     
-    1. Deploy applications using Helm:
+    1. Deploy ML Stack applications using Helm:
        cd ../helm && ./scripts/deploy-applications.sh
     
     2. Or deploy using GitOps:

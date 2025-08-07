@@ -1,6 +1,6 @@
-# Fraud Detection JARK Stack on EKS
+# Fraud Detection ML Stack on EKS
 
-This Terraform configuration deploys a complete JARK stack (JupyterHub, Argo Workflows, Ray, Karpenter) on Amazon EKS, optimized for fraud detection workloads with EMR on EKS and NVIDIA RAPIDS acceleration.
+This Terraform configuration deploys a complete ML Stack (JupyterHub, Argo Workflows, Ray, Karpenter) on Amazon EKS, optimized for fraud detection workloads with EMR on EKS and NVIDIA RAPIDS acceleration.
 
 ## Architecture Overview
 
@@ -12,7 +12,7 @@ The infrastructure combines the proven data-on-eks blueprint with modern ML plat
 - **EMR on EKS**: Virtual cluster for running Spark RAPIDS jobs
 - **NVIDIA GPU Operator**: GPU support for RAPIDS acceleration
 
-### JARK Stack Components
+### ML Stack Components
 - **JupyterHub**: Multi-user notebook environment with custom fraud detection profiles
 - **Argo Workflows**: Kubernetes-native ML pipeline orchestration
 - **Ray**: Distributed ML training and high-performance model serving
@@ -73,7 +73,7 @@ Before deploying, ensure you have:
 | `enable_nvidia_gpu_operator` | Enable GPU support | `true` |
 | `vpc_cidr` | VPC CIDR block | `10.1.0.0/16` |
 
-### JARK Stack Variables
+### ML Stack Variables
 
 | Variable | Description | Default |
 |----------|-------------|---------|
@@ -90,7 +90,7 @@ The configuration includes three pre-configured NodePools:
 2. **spark-gpu-rapids**: G5/G6 GPU instances for RAPIDS workloads
 3. **spark-memory-optimized**: R5/R6i instances for large datasets
 
-## JARK Stack Usage
+## ML Stack Usage
 
 ### JupyterHub Notebooks
 

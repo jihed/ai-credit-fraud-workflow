@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Fraud Detection EMR on EKS Deployment Script
+# Fraud Detection ML Stack on EKS Deployment Script
 set -e
 
 # Colors for output
@@ -191,25 +191,28 @@ display_outputs() {
     # Get service URLs
     get_service_urls
     
-    echo "=== JARK Stack Services ==="
+    echo "=== ML Stack on EKS Services ==="
     if [ ! -z "$JUPYTERHUB_URL" ] && [ "$JUPYTERHUB_URL" != "Pending..." ]; then
         echo "JupyterHub: http://$JUPYTERHUB_URL"
         echo "  - Username: any"
         echo "  - Password: fraud-detection-demo"
     else
-        echo "JupyterHub: $(terraform output -raw get_jupyterhub_url)"
+        JUPYTERHUB_CMD=$(terraform output -raw get_jupyterhub_url 2>/dev/null || echo "kubectl get svc -n jupyterhub proxy-public -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null || echo 'Service not deployed yet'")
+        echo "JupyterHub: $JUPYTERHUB_CMD"
     fi
     
     if [ ! -z "$RAY_DASHBOARD_URL" ] && [ "$RAY_DASHBOARD_URL" != "Pending..." ]; then
         echo "Ray Dashboard: http://$RAY_DASHBOARD_URL:8265"
     else
-        echo "Ray Dashboard: $(terraform output -raw get_ray_dashboard_url)"
+        RAY_CMD=$(terraform output -raw get_ray_dashboard_url 2>/dev/null || echo "kubectl get svc -n ray-clusters ray-dashboard-service -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null || echo 'Service not deployed yet'")
+        echo "Ray Dashboard: $RAY_CMD"
     fi
     
     if [ ! -z "$ARGO_URL" ] && [ "$ARGO_URL" != "Pending..." ]; then
         echo "Argo Workflows: http://$ARGO_URL:2746"
     else
-        echo "Argo Workflows: $(terraform output -raw get_argo_workflows_url)"
+        ARGO_CMD=$(terraform output -raw get_argo_workflows_url 2>/dev/null || echo "kubectl get svc -n argo-workflows argo-server -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null || echo 'Service not deployed yet'")
+        echo "Argo Workflows: $ARGO_CMD"
     fi
     
     if [ ! -z "$GRAFANA_URL" ] && [ "$GRAFANA_URL" != "Pending..." ]; then
@@ -217,13 +220,14 @@ display_outputs() {
         echo "  - Username: admin"
         echo "  - Password: fraud-detection-grafana"
     else
-        echo "Grafana: $(terraform output -raw get_grafana_url)"
+        GRAFANA_CMD=$(terraform output -raw get_grafana_url 2>/dev/null || echo "kubectl get svc -n kube-prometheus-stack kube-prometheus-stack-grafana -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null || echo 'Service not deployed yet'")
+        echo "Grafana: $GRAFANA_CMD"
     fi
     
     echo
     echo "=== Next Steps ==="
     echo "1. Configure kubectl: $(terraform output -raw configure_kubectl)"
-    echo "2. Build and push notebook images: cd ../docker && ./build-images.sh"
+    echo "2. Deploy ML Stack applications: cd ../helm && ./scripts/deploy-applications.sh"
     echo "3. Access JupyterHub to start developing fraud detection notebooks"
     echo "4. Use Ray for distributed ML training and serving"
     echo "5. Create Argo Workflows for ML pipeline orchestration"
@@ -237,14 +241,15 @@ display_outputs() {
     echo "kubectl get rayclusters -n ray-clusters"
     echo
     echo "# Submit Argo workflow:"
-    echo "$(terraform output -raw argo_workflow_submission_example)"
+    ARGO_EXAMPLE=$(terraform output -raw argo_workflow_submission_example 2>/dev/null || echo "# Argo workflow example will be available after terraform apply")
+    echo "$ARGO_EXAMPLE"
     echo
-    print_status "🎉 Happy fraud detecting with the JARK stack on EKS!"
+    print_status "🎉 Happy fraud detecting on Amazon EKS!"
 }
 
 # Main execution
 main() {
-    print_status "Starting Fraud Detection EMR on EKS deployment..."
+    print_status "Starting Fraud Detection on Amazon EKS ..."
     
     # Check if terraform.tfvars exists
     if [ ! -f "terraform.tfvars" ]; then
