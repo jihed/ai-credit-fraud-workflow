@@ -14,33 +14,33 @@
     - Configure Karpenter NodePools for GPU instances (G5/G6) and CPU instances
     - _Requirements: 1.1, 1.5_
 
-- [ ] 2. Deploy JupyterHub on EKS for unified notebook experience
-  - [ ] 2.1 Install JupyterHub using Helm chart with custom configuration
+- [x] 2. Deploy JupyterHub on EKS for unified notebook experience
+  - [x] 2.1 Install JupyterHub using Helm chart with custom configuration
     - Deploy JupyterHub with multiple user profiles for different workloads
     - Configure IRSA for S3 access from notebook pods
     - Set up persistent storage for user notebooks and data
     - _Requirements: 6.2_
 
-  - [ ] 2.2 Create custom notebook container images
+  - [x] 2.2 Create custom notebook container images
     - Build unified notebook image with Spark, Ray, RAPIDS, and XGBoost dependencies
     - Create separate images for Spark-focused and Ray-focused workloads
     - Include existing notebook code adapted for EKS environment
     - _Requirements: 6.2_
 
-  - [ ] 2.3 Configure JupyterHub profiles for different use cases
+  - [x] 2.3 Configure JupyterHub profiles for different use cases
     - Set up "Data Processing" profile with EMR on EKS integration
     - Set up "ML Training" profile with Ray cluster connectivity
     - Set up "Unified" profile with both Spark and Ray capabilities
     - _Requirements: 6.2_
 
-- [ ] 3. Adapt existing notebooks for EMR on EKS integration
-  - [ ] 3.1 Update feature engineering notebook for EMR on EKS
+- [x] 3. Adapt existing notebooks for EMR on EKS integration
+  - [x] 3.1 Update feature engineering notebook for EMR on EKS
     - Modify Fraud_Detection_Feature_Engineering_v22.ipynb for Kubernetes-aware Spark configuration
     - Update Spark session creation with EMR on EKS specific settings
     - Test feature engineering pipeline with same S3 data sources and RAPIDS acceleration
     - _Requirements: 2.1, 2.2_
 
-  - [ ] 3.2 Create EMR job submission utilities
+  - [x] 3.2 Create EMR job submission utilities
     - Implement helper functions to submit EMR on EKS jobs from JupyterHub notebooks
     - Add job monitoring and status checking capabilities
     - Create templates for different types of EMR jobs (feature engineering, training, inference)

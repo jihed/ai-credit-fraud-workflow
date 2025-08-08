@@ -1,0 +1,31 @@
+# EMR Spark Image for Fraud Detection Jobs
+# Minimal image based on EMR 6.15.0 with fraud detection code
+FROM --platform=linux/amd64 public.ecr.aws/emr-on-eks/spark/emr-6.15.0:latest
+
+USER root
+
+# Install only essential packages for fraud detection
+RUN pip install --no-cache-dir \
+    boto3==1.35.* \
+    s3fs==2024.* \
+    scikit-learn==1.5.* \
+    xgboost==2.1.*
+
+# Copy fraud detection source code and notebooks
+COPY src/ /opt/fraud-detection/src/
+COPY notebooks/ /opt/fraud-detection/notebooks/
+
+# Set environment variables
+ENV PYTHONPATH=/opt/fraud-detection/src:$PYTHONPATH
+ENV FRAUD_DETECTION_HOME=/opt/fraud-detection
+
+# Create directories for data and models
+RUN mkdir -p /opt/fraud-detection/data /opt/fraud-detection/models
+
+# Set proper permissions
+RUN chown -R hadoop:hadoop /opt/fraud-detection
+
+USER hadoop
+
+# Set working directory
+WORKDIR /opt/fraud-detection

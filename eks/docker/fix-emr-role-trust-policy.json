@@ -1,0 +1,25 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Principal": {
+        "Service": "emr-containers.amazonaws.com"
+      },
+      "Action": "sts:AssumeRole"
+    },
+    {
+      "Effect": "Allow",
+      "Principal": {
+        "Federated": "arn:aws:iam::368083780519:oidc-provider/oidc.eks.us-west-2.amazonaws.com/id/0A268D83EFAA630A3C85FE12F00C7243"
+      },
+      "Action": "sts:AssumeRoleWithWebIdentity",
+      "Condition": {
+        "StringEquals": {
+          "oidc.eks.us-west-2.amazonaws.com/id/0A268D83EFAA630A3C85FE12F00C7243:sub": "system:serviceaccount:emr-fraud-detection:emr-containers-sa-spark-driver",
+          "oidc.eks.us-west-2.amazonaws.com/id/0A268D83EFAA630A3C85FE12F00C7243:aud": "sts.amazonaws.com"
+        }
+      }
+    }
+  ]
+}

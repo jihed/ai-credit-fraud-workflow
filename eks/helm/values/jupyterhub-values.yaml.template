@@ -1,5 +1,5 @@
-# JupyterHub configuration for fraud detection demo
-# This configuration provides different notebook profiles for various workloads
+# JupyterHub configuration template for fraud detection demo
+# This template uses environment variables that will be substituted during deployment
 
 hub:
   # Disable persistent storage for demo
@@ -17,14 +17,15 @@ hub:
       
   extraEnv:
     # EMR on EKS configuration
-    VIRTUAL_CLUSTER_ID: '6rt5ikzzpmyu1u2vp6rqqhmd1'  # Will be populated from Terraform output
-    EMR_EXECUTION_ROLE_ARN: 'arn:aws:iam::368083780519:role/fraud-detection-emr-eks-emr-execution-20250806151622744200000001'  # Will be populated from Terraform output
+    VIRTUAL_CLUSTER_ID: '${VIRTUAL_CLUSTER_ID}'
+    EMR_EXECUTION_ROLE_ARN: '${EMR_EXECUTION_ROLE_ARN}'
     
     # Ray cluster configuration
-    RAY_CLUSTER_ADDRESS: 'ray://ray-cluster-head-svc.ray-system.svc.cluster.local:10001'
+    RAY_CLUSTER_ADDRESS: '${RAY_CLUSTER_ADDRESS}'
     
-    # S3 bucket for data
-    S3_BUCKET_NAME: 'fraud-detection-emr-eks-emr-20250806141826624700000005'  # Will be populated from Terraform output
+    # AWS configuration
+    AWS_REGION: '${AWS_REGION}'
+    S3_BUCKET_NAME: '${S3_BUCKET_NAME}'
 
   service:
     type: LoadBalancer

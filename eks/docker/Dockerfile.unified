@@ -1,5 +1,6 @@
-# Unified Development Environment (EMR Spark + Ray)
-FROM rayproject/ray:2.8.0-py310
+# Unified Development Environment for Fraud Detection
+# Complete environment with Spark, Ray, and ML libraries
+FROM --platform=linux/amd64 rayproject/ray:2.8.0-py310
 
 USER root
 
@@ -10,6 +11,7 @@ RUN apt-get update && apt-get install -y \
     unzip \
     git \
     openjdk-11-jdk \
+    build-essential \
     && rm -rf /var/lib/apt/lists/*
 
 # Install AWS CLI
@@ -18,26 +20,29 @@ RUN curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2
     && ./aws/install \
     && rm -rf awscliv2.zip aws/
 
-# Install Spark
-ENV SPARK_VERSION=3.5.0
+# Install Spark with Hadoop AWS support
+ENV SPARK_VERSION=3.5.2
 ENV HADOOP_VERSION=3
 RUN wget -q "https://archive.apache.org/dist/spark/spark-${SPARK_VERSION}/spark-${SPARK_VERSION}-bin-hadoop${HADOOP_VERSION}.tgz" \
     && tar xzf "spark-${SPARK_VERSION}-bin-hadoop${HADOOP_VERSION}.tgz" -C /opt/ \
     && rm "spark-${SPARK_VERSION}-bin-hadoop${HADOOP_VERSION}.tgz" \
     && ln -s "/opt/spark-${SPARK_VERSION}-bin-hadoop${HADOOP_VERSION}" /opt/spark
 
-# Create jovyan user
+# Download Spark JARs for S3 access
+RUN wget -q "https://repo1.maven.org/maven2/org/apache/hadoop/hadoop-aws/3.3.4/hadoop-aws-3.3.4.jar" -O /opt/spark/jars/hadoop-aws-3.3.4.jar \
+    && wget -q "https://repo1.maven.org/maven2/com/amazonaws/aws-java-sdk-bundle/1.12.262/aws-java-sdk-bundle-1.12.262.jar" -O /opt/spark/jars/aws-java-sdk-bundle-1.12.262.jar
+
+# Create jovyan user for JupyterHub compatibility
 RUN useradd -m -s /bin/bash jovyan && \
     chown -R jovyan:jovyan /home/jovyan
-
-USER jovyan
 
 # Install JupyterLab and extensions
 RUN pip install --no-cache-dir \
     jupyterlab==4.2.* \
     notebook==7.2.* \
     ipywidgets==8.1.* \
-    jupyterlab-git==0.50.*
+    jupyterlab-git==0.50.* \
+    jupyterlab-s3-browser==0.12.*
 
 # Install core data science packages
 RUN pip install --no-cache-dir \
@@ -66,13 +71,9 @@ RUN pip install --no-cache-dir \
     "ray[data]"==2.8.* \
     ray-lightning==0.3.*
 
-# Install RAPIDS (CPU version for compatibility)
+# Install EMR on EKS specific packages
 RUN pip install --no-cache-dir \
-    cudf-cu11==24.10.* \
-    cuml-cu11==24.10.* \
-    cugraph-cu11==24.10.* \
-    cuspatial-cu11==24.10.* \
-    cupy-cuda11x==13.3.*
+    kubernetes==30.1.*
 
 # Install additional ML frameworks
 RUN pip install --no-cache-dir \
@@ -86,15 +87,24 @@ ENV JAVA_HOME=/usr/lib/jvm/java-11-openjdk-amd64
 ENV SPARK_HOME=/opt/spark
 ENV PYSPARK_PYTHON=/opt/conda/bin/python
 ENV PYSPARK_DRIVER_PYTHON=/opt/conda/bin/python
-ENV PYTHONPATH=$SPARK_HOME/python:$SPARK_HOME/python/lib/py4j-0.10.9.7-src.zip:$PYTHONPATH
+ENV PYTHONPATH=$SPARK_HOME/python:$SPARK_HOME/python/lib/py4j-0.10.9.7-src.zip:/home/jovyan/src:$PYTHONPATH
 ENV RAY_DISABLE_IMPORT_WARNING=1
+
+# Spark configuration for EMR on EKS
+ENV SPARK_OPTS="--conf spark.sql.adaptive.enabled=true --conf spark.sql.adaptive.coalescePartitions.enabled=true"
+ENV PYSPARK_SUBMIT_ARGS="--packages org.apache.hadoop:hadoop-aws:3.3.4,com.amazonaws:aws-java-sdk-bundle:1.12.262 pyspark-shell"
 
 # Create directories
 RUN mkdir -p /home/jovyan/notebooks /home/jovyan/data /home/jovyan/models /home/jovyan/ray_results
 
-# Copy sample notebooks and scripts
+# Copy fraud detection notebooks and utilities
 COPY notebooks/ /home/jovyan/notebooks/
 COPY src/ /home/jovyan/src/
+
+# Set proper permissions
+RUN chown -R jovyan:jovyan /home/jovyan
+
+USER jovyan
 
 # Set working directory
 WORKDIR /home/jovyan

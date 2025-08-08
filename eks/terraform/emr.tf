@@ -1,4 +1,11 @@
 #---------------------------------------------------------------
+# Data Sources
+#---------------------------------------------------------------
+data "aws_eks_cluster" "cluster" {
+  name = module.eks.cluster_name
+}
+
+#---------------------------------------------------------------
 # EMR on EKS Virtual Cluster
 #---------------------------------------------------------------
 resource "aws_emrcontainers_virtual_cluster" "fraud_detection" {
@@ -40,6 +47,21 @@ resource "aws_iam_role" "emr_execution_role" {
           Service = "emr-containers.amazonaws.com"
         }
         Action = "sts:AssumeRole"
+      },
+      {
+        Effect = "Allow"
+        Principal = {
+          Federated = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:oidc-provider/${replace(data.aws_eks_cluster.cluster.identity[0].oidc[0].issuer, "https://", "")}"
+        }
+        Action = "sts:AssumeRoleWithWebIdentity"
+        Condition = {
+          StringLike = {
+            "${replace(data.aws_eks_cluster.cluster.identity[0].oidc[0].issuer, "https://", "")}:sub" = "system:serviceaccount:${kubernetes_namespace.emr_fraud_detection.metadata[0].name}:emr-containers-sa-*"
+          }
+          StringEquals = {
+            "${replace(data.aws_eks_cluster.cluster.identity[0].oidc[0].issuer, "https://", "")}:aud" = "sts.amazonaws.com"
+          }
+        }
       }
     ]
   })
@@ -146,6 +168,30 @@ resource "kubernetes_service_account" "emr_containers_sa_spark" {
   depends_on = [kubernetes_namespace.emr_fraud_detection]
 }
 
+resource "kubernetes_service_account" "emr_containers_sa_spark_driver" {
+  metadata {
+    name      = "emr-containers-sa-spark-driver"
+    namespace = kubernetes_namespace.emr_fraud_detection.metadata[0].name
+    annotations = {
+      "eks.amazonaws.com/role-arn" = aws_iam_role.emr_execution_role.arn
+    }
+  }
+
+  depends_on = [kubernetes_namespace.emr_fraud_detection]
+}
+
+resource "kubernetes_service_account" "emr_containers_sa_spark_executor" {
+  metadata {
+    name      = "emr-containers-sa-spark-executor"
+    namespace = kubernetes_namespace.emr_fraud_detection.metadata[0].name
+    annotations = {
+      "eks.amazonaws.com/role-arn" = aws_iam_role.emr_execution_role.arn
+    }
+  }
+
+  depends_on = [kubernetes_namespace.emr_fraud_detection]
+}
+
 resource "kubernetes_role" "emr_containers" {
   metadata {
     namespace = kubernetes_namespace.emr_fraud_detection.metadata[0].name
@@ -185,6 +231,18 @@ resource "kubernetes_role_binding" "emr_containers" {
     namespace = kubernetes_namespace.emr_fraud_detection.metadata[0].name
   }
 
+  subject {
+    kind      = "ServiceAccount"
+    name      = kubernetes_service_account.emr_containers_sa_spark_driver.metadata[0].name
+    namespace = kubernetes_namespace.emr_fraud_detection.metadata[0].name
+  }
+
+  subject {
+    kind      = "ServiceAccount"
+    name      = kubernetes_service_account.emr_containers_sa_spark_executor.metadata[0].name
+    namespace = kubernetes_namespace.emr_fraud_detection.metadata[0].name
+  }
+
   role_ref {
     kind      = "Role"
     name      = kubernetes_role.emr_containers.metadata[0].name
@@ -193,6 +251,8 @@ resource "kubernetes_role_binding" "emr_containers" {
 
   depends_on = [
     kubernetes_service_account.emr_containers_sa_spark,
+    kubernetes_service_account.emr_containers_sa_spark_driver,
+    kubernetes_service_account.emr_containers_sa_spark_executor,
     kubernetes_role.emr_containers
   ]
 }
@@ -243,4 +303,36 @@ resource "aws_s3_object" "fraud_predictions" {
   bucket       = module.s3_bucket.s3_bucket_id
   key          = "fraud-predictions/"
   content_type = "application/x-directory"
+}
+
+#---------------------------------------------------------------
+# Outputs
+#---------------------------------------------------------------
+output "emr_virtual_cluster_id" {
+  description = "EMR virtual cluster ID"
+  value       = aws_emrcontainers_virtual_cluster.fraud_detection.id
+}
+
+output "emr_execution_role_arn" {
+  description = "EMR execution role ARN"
+  value       = aws_iam_role.emr_execution_role.arn
+}
+
+output "emr_s3_bucket" {
+  description = "S3 bucket for EMR data and logs"
+  value       = module.s3_bucket.s3_bucket_id
+}
+
+output "emr_namespace" {
+  description = "Kubernetes namespace for EMR jobs"
+  value       = kubernetes_namespace.emr_fraud_detection.metadata[0].name
+}
+
+output "emr_service_accounts" {
+  description = "EMR service account names"
+  value = {
+    spark_driver   = kubernetes_service_account.emr_containers_sa_spark_driver.metadata[0].name
+    spark_executor = kubernetes_service_account.emr_containers_sa_spark_executor.metadata[0].name
+    spark_general  = kubernetes_service_account.emr_containers_sa_spark.metadata[0].name
+  }
 }

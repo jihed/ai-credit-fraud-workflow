@@ -1,0 +1,70 @@
+# JupyterHub namespace
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: jupyterhub
+  labels:
+    name: jupyterhub
+    app: jupyterhub
+    # Enable network policies
+    network-policy: enabled
+---
+# Resource quota for JupyterHub namespace to manage resource usage
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: jupyterhub-quota
+  namespace: jupyterhub
+spec:
+  hard:
+    # Limit total CPU and memory for all notebook pods
+    requests.cpu: "50"      # 50 CPU cores total
+    requests.memory: "200Gi" # 200GB memory total
+    limits.cpu: "100"       # 100 CPU cores total
+    limits.memory: "400Gi"  # 400GB memory total
+    # Limit number of pods
+    pods: "50"
+    # Limit persistent volume claims
+    persistentvolumeclaims: "10"
+    # Limit services and load balancers
+    services: "5"
+    services.loadbalancers: "2"
+---
+# Network policy for JupyterHub security
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: jupyterhub-network-policy
+  namespace: jupyterhub
+spec:
+  podSelector: {}  # Apply to all pods in namespace
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  # Allow ingress from within the same namespace
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          name: jupyterhub
+  # Allow ingress from load balancer
+  - from: []
+    ports:
+    - protocol: TCP
+      port: 8000
+    - protocol: TCP
+      port: 8001
+  egress:
+  # Allow all egress for S3, EMR, Ray cluster access
+  - {}
+  # In production, restrict egress to specific services:
+  # - to:
+  #   - namespaceSelector:
+  #       matchLabels:
+  #         name: ray-system
+  # - to: []
+  #   ports:
+  #   - protocol: TCP
+  #     port: 443  # HTTPS for S3, EMR APIs
+  #   - protocol: TCP
+  #     port: 80   # HTTP if needed
