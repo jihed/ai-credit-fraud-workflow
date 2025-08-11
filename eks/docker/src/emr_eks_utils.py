@@ -72,32 +72,40 @@ class EMROnEKSJobManager:
         return {
             'rapids_test': {
                 'name_prefix': 'rapids-test',
-                'release_label': 'emr-7.2.0-latest',
+                'release_label': 'emr-6.9.0-spark-rapids-latest',  # Use official RAPIDS image
                 'executor_instances': '2',
                 'executor_memory': '8G',
                 'executor_cores': '2',
                 'driver_cores': '2',
                 'driver_memory': '4G',
+                'container_image': 'public.ecr.aws/emr-on-eks/spark-rapids:emr-6.9.0-spark-rapids-latest',
                 'spark_configs': {
-                    # Core RAPIDS configuration
+                    # Core RAPIDS configuration - optimized for official image
                     'spark.plugins': 'com.nvidia.spark.SQLPlugin',
                     'spark.rapids.sql.enabled': 'true',
+                    'spark.rapids.sql.python.gpu.enabled': 'true',
                     'spark.rapids.sql.concurrentGpuTasks': '2',
                     'spark.rapids.memory.pinnedPool.size': '2G',
                     'spark.rapids.memory.gpu.pool': 'ASYNC',
                     'spark.rapids.memory.gpu.allocFraction': '0.6',
+                    'spark.rapids.shuffle.mode': 'MULTITHREADED',
                     
-                    # GPU resource allocation
+                    # GPU resource allocation - both driver and executors get GPU
                     'spark.executor.resource.gpu.vendor': 'nvidia.com',
                     'spark.executor.resource.gpu.amount': '1',
                     'spark.task.resource.gpu.amount': '1',
+                    'spark.driver.resource.gpu.amount': '1',
                     
-                    # Performance tuning
+                    # Performance tuning for RAPIDS
                     'spark.sql.adaptive.enabled': 'true',
+                    'spark.sql.adaptive.coalescePartitions.enabled': 'true',
                     'spark.sql.files.maxPartitionBytes': '512MB',
-                    'spark.sql.shuffle.partitions': '64',
+                    'spark.sql.shuffle.partitions': '200',
                     'spark.locality.wait': '0s',
-                    'spark.dynamicAllocation.enabled': 'false'
+                    'spark.dynamicAllocation.enabled': 'false',
+                    
+                    # Use official RAPIDS image
+                    'spark.kubernetes.container.image': 'public.ecr.aws/emr-on-eks/spark-rapids:emr-6.9.0-spark-rapids-latest'
                 }
             }
         }
@@ -557,11 +565,11 @@ class EMROnEKSJobManager:
                               custom_configs: Optional[Dict] = None,
                               container_image: Optional[str] = None) -> str:
         """
-        Submit a RAPIDS test job to validate GPU acceleration
+        Submit a RAPIDS test job using official EMR RAPIDS image
         
         Args:
             custom_configs: Custom Spark configurations
-            container_image: Custom container image with RAPIDS support
+            container_image: Custom container image (defaults to official EMR RAPIDS image)
             
         Returns:
             Job run ID
@@ -572,11 +580,15 @@ class EMROnEKSJobManager:
         # Add job-specific parameters
         spark_params = f"--py-files {script_path}"
         
-        # Use custom container image if provided
+        # Use official EMR RAPIDS image by default, or custom if provided
+        if not custom_configs:
+            custom_configs = {}
+            
         if container_image:
-            if not custom_configs:
-                custom_configs = {}
             custom_configs['spark.kubernetes.container.image'] = container_image
+        else:
+            # Use official EMR RAPIDS image by default
+            custom_configs['spark.kubernetes.container.image'] = 'public.ecr.aws/emr-on-eks/spark-rapids:emr-6.9.0-spark-rapids-latest'
         
         tags = {
             'JobType': 'RapidsTest',
@@ -691,10 +703,11 @@ def print_job_status(job_run_id: str):
 
 def submit_rapids_test(container_image: str = None) -> str:
     """
-    Submit RAPIDS test job - main function for testing GPU functionality
+    Submit RAPIDS test job using official EMR RAPIDS image
     
     Args:
-        container_image: RAPIDS-enabled container image
+        container_image: Custom RAPIDS-enabled container image 
+                        (defaults to official EMR RAPIDS image)
         
     Returns:
         Job run ID

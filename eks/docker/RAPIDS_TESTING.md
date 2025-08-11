@@ -31,17 +31,34 @@ export AWS_DEFAULT_REGION="us-west-2"
 export S3_BUCKET="your-fraud-detection-bucket"
 ```
 
-### 2. Run Basic Tests
+### 2. Test RAPIDS on EMR (Recommended - Uses Official Image)
 
 ```bash
-# Test without custom RAPIDS image (will likely fail but validates setup)
-python3 test_rapids.py --skip-basic
+# Submit RAPIDS test job using official EMR RAPIDS image (recommended)
+python3 -c "
+from emr_eks_utils import submit_rapids_test
+job_id = submit_rapids_test()  # Uses official EMR RAPIDS image by default
+print(f'Job submitted: {job_id}')
+"
+```
 
-# Build RAPIDS image and test
-python3 test_rapids.py --build-image
+### 3. Build Custom RAPIDS Container (Optional)
 
-# Test with existing RAPIDS image
-python3 test_rapids.py --custom-image your-account.dkr.ecr.region.amazonaws.com/fraud-detection/emr-rapids:latest
+If you need additional packages beyond the official EMR RAPIDS image:
+
+```bash
+# Option 1: Build custom image extending official EMR RAPIDS image
+./build-rapids-image.sh
+
+# Option 2: Validation only (for testing)
+./build-rapids-image.sh validate-only
+
+# Option 3: Use custom image in job submission
+python3 -c "
+from emr_eks_utils import submit_rapids_test
+job_id = submit_rapids_test('your-account.dkr.ecr.region.amazonaws.com/fraud-detection/emr-rapids:latest')
+print(f'Job submitted: {job_id}')
+"
 ```
 
 ## Test Components
@@ -56,10 +73,24 @@ Creates a custom EMR image with:
 - GPU-optimized configurations
 - Fraud detection dependencies
 
-**Build Command:**
+**Build Commands:**
 ```bash
+# Build with comprehensive validation
 ./build-rapids-image.sh
+
+# Validate existing build
+./validate-build.sh
+
+# Build specific image type
+./build-all.sh build rapids
 ```
+
+**Validation Features:**
+- Container functionality testing
+- PySpark availability verification
+- RAPIDS script execution testing
+- Environment variable validation
+- EMR compatibility checks
 
 ### 2. RAPIDS Test Job
 

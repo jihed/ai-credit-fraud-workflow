@@ -103,6 +103,31 @@ prepare_build_context() {
     print_status "✅ Build context ready"
 }
 
+# Function to validate RAPIDS container
+validate_rapids_container() {
+    local image_name=$1
+    local tag=$2
+    
+    print_status "Validating RAPIDS container functionality..."
+    
+    # Check if validation files exist
+    if [ ! -f "test_container.py" ]; then
+        print_warning "test_container.py not found, skipping container validation"
+        return 0
+    fi
+    
+    # Run container validation
+    if docker run --name rapids-validation-test --rm \
+        -v "$(pwd)/test_container.py:/test_container.py" \
+        "$image_name:$tag" python3 /test_container.py; then
+        print_status "✅ RAPIDS container validation passed"
+        return 0
+    else
+        print_error "❌ RAPIDS container validation failed"
+        return 1
+    fi
+}
+
 # Function to build and push image
 build_and_push() {
     local dockerfile=$1
@@ -114,13 +139,29 @@ build_and_push() {
     # Create ECR repository
     create_ecr_repo "$image_name"
     
-    # Build image
-    print_status "Building Docker image..."
-    if docker build --platform linux/amd64 -f "$dockerfile" -t "$image_name:$tag" .; then
+    # Build image for AMD64/x86_64 (EC2 compatible)
+    print_status "Building Docker image for AMD64 platform..."
+    if docker build --platform linux/amd64 --no-cache -f "$dockerfile" -t "$image_name:$tag" .; then
         print_status "✅ Successfully built $image_name:$tag"
+        
+        # Verify the image architecture
+        ARCH=$(docker inspect "$image_name:$tag" --format='{{.Architecture}}')
+        print_status "Image architecture: $ARCH"
+        if [ "$ARCH" != "amd64" ]; then
+            print_error "❌ Image built for wrong architecture: $ARCH (expected: amd64)"
+            return 1
+        fi
     else
         print_error "❌ Failed to build $image_name:$tag"
         return 1
+    fi
+    
+    # Special validation for RAPIDS image
+    if [[ "$image_name" == *"rapids"* ]]; then
+        if ! validate_rapids_container "$image_name" "$tag"; then
+            print_error "❌ RAPIDS container validation failed"
+            return 1
+        fi
     fi
     
     # Tag for ECR

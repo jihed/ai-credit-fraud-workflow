@@ -185,8 +185,7 @@ def test_fraud_detection_simulation(spark):
         transactions = transactions.withColumn("customer_id", (F.rand() * 10000).cast("int"))
         transactions = transactions.withColumn("merchant_id", (F.rand() * 1000).cast("int"))
         transactions = transactions.withColumn("amount", F.rand() * 5000)
-        transactions = transactions.withColumn("timestamp", 
-            F.current_timestamp() - (F.rand() * 86400).cast("int"))
+        transactions = transactions.withColumn("timestamp", F.current_timestamp())
         
         # Add fraud indicators (simulate 2% fraud rate)
         transactions = transactions.withColumn("is_fraud", 
